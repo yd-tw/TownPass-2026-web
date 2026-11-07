@@ -2,6 +2,7 @@
 
 import {
   BarChart3,
+  Camera,
   ClipboardList,
   DatabaseZap,
   Inbox,
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { clearSession, createAdminApi, login, readSession, type AdminApi, type AdminSession, type QuestionFilter } from "./api";
 import { createMockAdminApi } from "./mock-api";
 import { AnalyticsSection } from "./sections/analytics";
+import { AnalyticsSnapshotSection } from "./sections/analytics-snapshot";
 import { AuditSection } from "./sections/audit";
 import { CacheSection } from "./sections/cache";
 import { ContentSection } from "./sections/content";
@@ -23,10 +25,11 @@ import { PendingSection } from "./sections/pending";
 import { UsersSection } from "./sections/users";
 import { Button, ToastProvider, errorText, inputClass } from "./ui";
 
-export type SectionId = "analytics" | "pending" | "content" | "users" | "cache" | "audit";
+export type SectionId = "analytics" | "snapshot" | "pending" | "content" | "users" | "cache" | "audit";
 
 const NAV: { id: SectionId; label: string; icon: LucideIcon }[] = [
   { id: "analytics", label: "頁面問題分析", icon: BarChart3 },
+  { id: "snapshot", label: "頁面問題分析（快照）", icon: Camera },
   { id: "pending", label: "待處理事項", icon: Inbox },
   { id: "content", label: "內容管理", icon: MessagesSquare },
   { id: "users", label: "使用者管理", icon: Users },
@@ -212,6 +215,7 @@ function AdminShell({ api, onLogout }: { api: AdminApi; onLogout: () => void }) 
               }}
             />
           )}
+          {section === "snapshot" && <AnalyticsSnapshotSection api={api} />}
           {section === "pending" && <PendingSection api={api} />}
           {section === "content" && <ContentSection key={JSON.stringify(contentFilter)} api={api} initialFilter={contentFilter} />}
           {section === "users" && <UsersSection api={api} />}

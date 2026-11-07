@@ -13,7 +13,7 @@ import { Card, Empty, ErrorBox, Loading, SectionTitle, Select, formatTime, input
  * 未解決 orange-600、協助中 grape、已解決 primary-500。
  * 已解決的青色對白底對比偏低，所以每段都有數字欄位，不只靠顏色。
  */
-const SEGMENTS = [
+export const SEGMENTS = [
   { key: "open_count", label: "未解決", color: "#e6692c" },
   { key: "in_progress_count", label: "協助中", color: "#5e73b4" },
   { key: "resolved_count", label: "已解決", color: "#2eb6c7" },
@@ -160,7 +160,7 @@ function StatTile({ label, value, hint }: { label: string; value: number; hint?:
   );
 }
 
-function Legend() {
+export function Legend() {
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-tp-gray-700" aria-label="圖例">
       {SEGMENTS.map((s) => (
@@ -174,8 +174,6 @@ function Legend() {
 }
 
 function PageRow({ rank, page, max, onOpenService }: { rank: number; page: PageStat; max: number; onOpenService: (id: string) => void }) {
-  const [hover, setHover] = useState<number | null>(null);
-  const segments = SEGMENTS.map((s) => ({ ...s, value: page[s.key] })).filter((s) => s.value > 0);
   const topCategories = page.categories.slice(0, 3);
   const unresolved = page.open_count + page.in_progress_count;
 
@@ -205,26 +203,7 @@ function PageRow({ rank, page, max, onOpenService }: { rank: number; page: PageS
         </button>
       </td>
       <td className="py-3.5 pr-3">
-        {/* 長度依問題數，分段依狀態；段與段之間留 2px 白縫 */}
-        <div className="relative pt-1.5" onMouseLeave={() => setHover(null)}>
-          <div className="flex h-3.5 gap-[2px]" style={{ width: `${(page.question_count / max) * 100}%`, minWidth: 6 }} role="img" aria-label={segments.map((s) => `${s.label} ${s.value} 題`).join("、")}>
-            {segments.map((s, i) => (
-              <span
-                key={s.key}
-                onMouseEnter={() => setHover(i)}
-                className={cn("h-full transition-opacity first:rounded-l last:rounded-r", hover !== null && hover !== i && "opacity-40")}
-                style={{ flexGrow: s.value, flexBasis: 0, background: s.color }}
-              />
-            ))}
-          </div>
-          {hover !== null && segments[hover] && (
-            <div role="tooltip" className="pointer-events-none absolute top-full left-0 z-10 mt-1.5 rounded-lg bg-tp-gray-900 px-2.5 py-1.5 text-xs whitespace-nowrap text-white shadow-lg">
-              <span className="mr-1.5 inline-block size-2 rounded-sm align-middle" style={{ background: segments[hover].color }} />
-              {segments[hover].label} <span className="font-semibold tabular-nums">{segments[hover].value}</span> 題（
-              {Math.round((segments[hover].value / page.question_count) * 100)}%）
-            </div>
-          )}
-        </div>
+        <StatusBar page={page} max={max} />
       </td>
       <td className="py-3.5 pr-3 text-right text-base font-bold tabular-nums">{page.question_count}</td>
       <td className={cn("py-3.5 pr-3 text-right tabular-nums", unresolved > 0 ? "font-semibold text-tp-gray-900" : "text-tp-gray-500")}>
@@ -237,5 +216,33 @@ function PageRow({ rank, page, max, onOpenService }: { rank: number; page: PageS
         {timeAgo(page.last_asked_at)}
       </td>
     </tr>
+  );
+}
+
+/** 一個頁面的狀態長條：長度依問題數，分段依狀態，滑過顯示該段題數 */
+export function StatusBar({ page, max, thick }: { page: PageStat; max: number; thick?: boolean }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const segments = SEGMENTS.map((s) => ({ ...s, value: page[s.key] })).filter((s) => s.value > 0);
+  // 長度依問題數，分段依狀態；段與段之間留 2px 白縫
+  return (
+    <div className="relative pt-1.5" onMouseLeave={() => setHover(null)}>
+      <div className={cn("flex gap-[2px]", thick ? "h-5" : "h-3.5")} style={{ width: `${(page.question_count / max) * 100}%`, minWidth: 6 }} role="img" aria-label={segments.map((s) => `${s.label} ${s.value} 題`).join("、")}>
+        {segments.map((s, i) => (
+          <span
+            key={s.key}
+            onMouseEnter={() => setHover(i)}
+            className={cn("h-full transition-opacity first:rounded-l last:rounded-r", hover !== null && hover !== i && "opacity-40")}
+            style={{ flexGrow: s.value, flexBasis: 0, background: s.color }}
+          />
+        ))}
+      </div>
+      {hover !== null && segments[hover] && (
+        <div role="tooltip" className="pointer-events-none absolute top-full left-0 z-10 mt-1.5 rounded-lg bg-tp-gray-900 px-2.5 py-1.5 text-xs whitespace-nowrap text-white shadow-lg">
+          <span className="mr-1.5 inline-block size-2 rounded-sm align-middle" style={{ background: segments[hover].color }} />
+          {segments[hover].label} <span className="font-semibold tabular-nums">{segments[hover].value}</span> 題（
+          {Math.round((segments[hover].value / page.question_count) * 100)}%）
+        </div>
+      )}
+    </div>
   );
 }
