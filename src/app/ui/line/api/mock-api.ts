@@ -42,8 +42,8 @@ export const META: Meta = {
     image_max_bytes: 10 * 1024 * 1024,
     audio_max_bytes: 20 * 1024 * 1024,
     audio_max_seconds: 180,
-    video_max_bytes: 30 * 1024 * 1024,
-    video_max_seconds: 180,
+    video_max_bytes: 20 * 1024 * 1024,
+    video_max_seconds: 60,
   },
 };
 
@@ -72,12 +72,13 @@ function makeId(prefix: string) {
 type VoteState = { up: number; mine: 1 | -1 | null };
 
 const HELPERS: Record<string, PublicUser> = {
-  xiaozhi: { id: "u-xiaozhi", nickname: "志工小志", points: 320 },
-  wang: { id: "u-wang", nickname: "王小姐", points: 85 },
-  li: { id: "u-li", nickname: "李警官（志工）", points: 610 },
-  lin: { id: "u-lin", nickname: "林同學", points: 40 },
-  ade: { id: "u-ade", nickname: "阿德", points: 120 },
-  an: { id: "u-an", nickname: "志工小安", points: 210 },
+  xiaozhi: { id: "u-xiaozhi", nickname: "志工小志", points: 320, role: "user" },
+  wang: { id: "u-wang", nickname: "王小姐", points: 85, role: "user" },
+  li: { id: "u-li", nickname: "李警官（志工）", points: 610, role: "user" },
+  lin: { id: "u-lin", nickname: "林同學", points: 40, role: "user" },
+  ade: { id: "u-ade", nickname: "阿德", points: 120, role: "user" },
+  an: { id: "u-an", nickname: "志工小安", points: 210, role: "user" },
+  bot: { id: "u-bot", nickname: "城市通小幫手", points: 0, role: "bot" },
 };
 
 /** 送出新問題後，模擬幾秒後有熱心的人回覆 */
@@ -103,7 +104,8 @@ const AUTO_REPLY: Partial<Record<CategoryId, string>> = {
   app_usage: "您好，請問是卡在哪一個畫面呢？可以拍照給我看看。",
 };
 
-function tagsFor(body: string) {
+/** 初始示範資料用的自訂標籤；新發問只採用使用者送出的 tags */
+function seedTagsFor(body: string) {
   const rules: [RegExp, string][] = [
     [/租屋|房租|住宅|補助/, "租屋補助"],
     [/捷運|公車|交通|停車/, "交通指引"],
@@ -176,6 +178,7 @@ export function createMockApi(
     id: "u-me",
     nickname: initialNickname,
     points: 0,
+    role: "user",
     languages: ["zh-TW"],
     nearby_notifications_enabled: false,
     nearby_radius_m: 1000,
@@ -185,6 +188,7 @@ export function createMockApi(
     id: me.id,
     nickname: me.nickname,
     points: me.points,
+    role: me.role,
   });
 
   const questions: QuestionDetail[] = [];
@@ -212,7 +216,7 @@ export function createMockApi(
       id: makeId("q"),
       status: opts.status ?? "open",
       title,
-      tags: tagsFor(body),
+      tags: seedTagsFor(body),
       category,
       language: "zh-TW",
       assistance_mode: "online",
@@ -222,6 +226,7 @@ export function createMockApi(
       area: null,
       thumbnail_url: media.find((m) => m.kind === "image")?.url ?? null,
       has_audio: media.some((m) => m.kind === "audio"),
+      has_video: media.some((m) => m.kind === "video"),
       answer_count: 0,
       reward_points: 0,
       can_claim: false,
@@ -331,7 +336,7 @@ export function createMockApi(
     "租屋補助要如何申請？",
     "剛搬到臺北，想知道租屋補助要從哪裡開始申請？需要先準備哪些文件？看了一圈網站還是有點搞不清楚。",
   );
-  forum1.author = { id: "demo-asker", nickname: "小安", points: 20 };
+  forum1.author = { id: "demo-asker", nickname: "小安", points: 20, role: "user" };
   forum1.is_author = false;
   forum1.location_sharing = "approximate";
   addAnswer(forum1, 12 * MIN, HELPERS.an, "可以先到臺北市住宅服務網站看申請資格，通常會需要身分證明、租賃契約與所得資料。你現在是自己租屋嗎？");
@@ -342,11 +347,12 @@ export function createMockApi(
     "大安森林公園無障礙入口怎麼走？",
     "明天要帶家人去大安森林公園，附近有無障礙廁所嗎？輪椅推行哪個入口比較方便？",
   );
-  forum2.author = { id: "demo-yu", nickname: "羽晴", points: 35 };
+  forum2.author = { id: "demo-yu", nickname: "羽晴", points: 35, role: "user" };
   forum2.is_author = false;
   forum2.location_sharing = "approximate";
   forum2.tags = ["無障礙", "交通指引"];
   addAnswer(forum2, 29 * MIN, HELPERS.wang, "我上次從信義路側進去，步道比較平順。公園服務中心旁也有無障礙廁所。", 2);
+  addAnswer(forum2, 25 * MIN, HELPERS.bot, "我是自動小幫手，出發前建議再確認公園的最新無障礙資訊。");
 
   const forum3 = addQuestion(
     2 * HOUR,
@@ -354,7 +360,7 @@ export function createMockApi(
     "停車費催繳簡訊是真的嗎？",
     "收到一封說要補繳停車費的簡訊，網址看起來怪怪的。請問怎麼確認是不是真的？",
   );
-  forum3.author = { id: "demo-cheng", nickname: "阿成", points: 0 };
+  forum3.author = { id: "demo-cheng", nickname: "阿成", points: 0, role: "user" };
   forum3.is_author = false;
   forum3.location_sharing = "off";
 
@@ -365,7 +371,7 @@ export function createMockApi(
     "這個要怎麼弄？",
     "我兒子幫我裝的那個東西一直跳出來，不知道要按哪裡，好煩喔",
   );
-  forum4.author = { id: "demo-mei", nickname: "美玉阿嬤", points: 0 };
+  forum4.author = { id: "demo-mei", nickname: "美玉阿嬤", points: 0, role: "user" };
   forum4.is_author = false;
   forum4.location_sharing = "off";
 
@@ -399,6 +405,7 @@ export function createMockApi(
     area: null,
     thumbnail_url: q.thumbnail_url,
     has_audio: q.has_audio,
+    has_video: q.has_video,
     answer_count: q.answer_count,
     reward_points: q.reward_points,
     can_claim: q.can_claim,
@@ -419,6 +426,7 @@ export function createMockApi(
         id: `u-crowd-${i}`,
         nickname,
         points: Math.floor(Math.random() * 500),
+        role: "user" as const,
       };
       items.push({
         author,
@@ -513,11 +521,15 @@ export function createMockApi(
 
     async listForumQuestions(filter) {
       await wait();
-      return clone(
-        questions
-          .filter((q) => !filter?.category || q.category === filter.category)
-          .sort((a, b) => b.created_at.localeCompare(a.created_at)),
-      );
+      const list = questions
+        .filter((q) => !filter?.category || q.category === filter.category)
+        .filter((q) => !filter?.tagQuery || q.tags.some((tag) => tag.toLowerCase().includes(filter.tagQuery!.toLowerCase())))
+        .sort((a, b) => b.created_at.localeCompare(a.created_at));
+      const start = filter?.cursor ? Math.max(0, list.findIndex((q) => q.id === filter.cursor) + 1) : 0;
+      return clone({
+        questions: list.slice(start, start + 20),
+        nextCursor: list[start + 20] ? list[start + 19].id : null,
+      });
     },
 
     async setQuestionCategory(questionId, category) {
@@ -545,6 +557,9 @@ export function createMockApi(
       await wait(400);
       const existing = requestIds.get(req.client_request_id);
       if (existing) return clone(findQuestion(existing));
+      if (req.location_sharing === "off" && "location" in req) {
+        throw new ApiError(400, "VALIDATION_ERROR", "關閉位置分享時不可傳 location");
+      }
       const body = req.body?.trim() ?? "";
       const mediaIds = req.media_ids ?? [];
       if (!body && mediaIds.length === 0) {
@@ -562,7 +577,7 @@ export function createMockApi(
         id: makeId("q"),
         status: "open",
         title: req.title ?? (body ? body.slice(0, 30) : fallbackTitle),
-        tags: tagsFor(body),
+        tags: req.tags ?? [],
         category: req.category ?? autoCategory(body),
         language: req.language,
         assistance_mode: req.assistance_mode,
@@ -572,6 +587,7 @@ export function createMockApi(
         area: null,
         thumbnail_url: media.find((m) => m.kind === "image")?.url ?? null,
         has_audio: media.some((m) => m.kind === "audio"),
+        has_video: media.some((m) => m.kind === "video"),
         answer_count: 0,
         reward_points: 0,
         can_claim: false,
@@ -696,14 +712,17 @@ export function createMockApi(
           throw new ApiError(413, "FILE_TOO_LARGE", "照片不能超過 10 MB");
         }
       } else if (kind === "video") {
-        if (!["video/mp4", "video/webm", "video/quicktime"].includes(file.type)) {
-          throw new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "影片只支援 MP4、WebM、MOV");
+        if (!["video/mp4", "video/webm"].includes(file.type)) {
+          throw new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "影片只支援 MP4、WebM");
         }
         if (file.size > (META.limits.video_max_bytes ?? Infinity)) {
-          throw new ApiError(413, "FILE_TOO_LARGE", "影片不能超過 30 MB");
+          throw new ApiError(413, "FILE_TOO_LARGE", "影片不能超過 20 MB");
         }
-        if (durationSeconds && durationSeconds > (META.limits.video_max_seconds ?? Infinity)) {
-          throw new ApiError(400, "VALIDATION_ERROR", "影片最長 3 分鐘");
+        if (!durationSeconds || !Number.isFinite(durationSeconds)) {
+          throw new ApiError(400, "VALIDATION_ERROR", "影片需要 duration_seconds");
+        }
+        if (durationSeconds > (META.limits.video_max_seconds ?? Infinity)) {
+          throw new ApiError(400, "VALIDATION_ERROR", "影片最長 60 秒");
         }
       } else {
         const type = file.type.split(";")[0];

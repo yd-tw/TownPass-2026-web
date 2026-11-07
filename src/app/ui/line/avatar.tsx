@@ -1,4 +1,4 @@
-import { Mic, Users } from "lucide-react";
+import { Mic, Users, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CategoryId, QuestionSummary } from "./api/types";
 import { CATEGORY_STYLE } from "./categories";
@@ -80,14 +80,14 @@ export function CategoryAvatar({
 }
 
 /**
- * 列表與選單裡的問題頭像：拍照問的顯示照片縮圖、錄音問的顯示麥克風，
+ * 列表與選單裡的問題頭像：拍照顯示縮圖、錄音顯示麥克風、影片顯示攝影機，
  * 長輩一眼就認得出是哪一題；其他用分類圖示。
  */
 export function QuestionAvatar({
   q,
   size = 56,
 }: {
-  q: Pick<QuestionSummary, "id" | "category" | "thumbnail_url" | "has_audio">;
+  q: Pick<QuestionSummary, "id" | "category" | "thumbnail_url" | "has_audio" | "has_video">;
   size?: number;
 }) {
   if (q.thumbnail_url) {
@@ -110,6 +110,13 @@ export function QuestionAvatar({
         style={{ width: size, height: size }}
       >
         <Mic style={{ width: size * 0.48, height: size * 0.48 }} />
+      </span>
+    );
+  }
+  if (q.has_video) {
+    return (
+      <span aria-hidden className="inline-flex shrink-0 items-center justify-center rounded-full bg-tp-primary-500 text-white" style={{ width: size, height: size }}>
+        <Video style={{ width: size * 0.48, height: size * 0.48 }} />
       </span>
     );
   }

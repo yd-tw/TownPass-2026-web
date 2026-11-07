@@ -32,7 +32,7 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { META } from "./api/mock-api";
-import type { Answer, CategoryId, Media, QuestionDetail } from "./api/types";
+import type { Answer, CategoryId, Media, Meta, QuestionDetail, UserRole } from "./api/types";
 import { Avatar, QuestionAvatar } from "./avatar";
 import { categoryLabel } from "./categories";
 import { IconButton, Sheet } from "./chat-list";
@@ -47,10 +47,9 @@ const CHAT_BG = "var(--color-tp-gray-100)";
 const SELF_BUBBLE = "var(--color-tp-primary-200)";
 const GROUP_GAP = 5 * 60 * 1000;
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
-/** iPhone 錄影是 MOV，Android 多半是 MP4 */
-const VIDEO_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
-const VIDEO_MAX_BYTES = META.limits.video_max_bytes ?? 30 * 1024 * 1024;
-const VIDEO_MAX_SECONDS = META.limits.video_max_seconds ?? 180;
+const VIDEO_TYPES = ["video/mp4", "video/webm"];
+const VIDEO_MAX_BYTES = 20 * 1024 * 1024;
+const VIDEO_MAX_SECONDS = 60;
 
 /** 讀影片長度；讀不到（部分 WebM 會是 Infinity）就回傳 undefined */
 function readVideoDuration(file: File): Promise<number | undefined> {
@@ -78,6 +77,7 @@ export type ChatRoomProps = {
   category: CategoryId;
   answers: Answer[];
   now: number;
+  limits: Meta["limits"];
   sending: boolean;
   onBack: () => void;
   onSend: (out: Outgoing) => Promise<boolean>;
@@ -98,6 +98,7 @@ type Post = {
   answer: Answer | null;
   self: boolean;
   authorName: string;
+  authorRole: UserRole;
   at: number;
   body: string | null;
   media: Media[];
@@ -109,11 +110,12 @@ type Item =
   | { type: "note"; key: string; text: string }
   | { type: "post"; key: string; post: Post; first: boolean };
 
-type Confirm = { kind: "withdraw" };
+type Confirm = { kind: "withdraw" | "resolve" };
 type PendingMedia = { id: string; kind: "image" | "video"; file: File; duration?: number };
 
 export function ChatRoom(props: ChatRoomProps) {
   const { question, answers, meId, now, sending, notify } = props;
+  const limits = props.limits;
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
@@ -146,8 +148,6 @@ export function ChatRoom(props: ChatRoomProps) {
   );
   const othersCount = othersAnswers.length;
   const canResolve = !!question && isAuthor && question.status !== "resolved";
-  /** 像 LINE 群組人數：自己＋回答過的人 */
-  const members = 1 + new Set(othersAnswers.map((a) => a.author.id)).size;
 
   const posts = useMemo(() => {
     const out: Post[] = [];
@@ -157,6 +157,7 @@ export function ChatRoom(props: ChatRoomProps) {
         answer: null,
         self: question.author.id === meId,
         authorName: question.author.nickname,
+        authorRole: question.author.role,
         at: Date.parse(question.created_at),
         body: question.body,
         media: question.media,
@@ -171,6 +172,7 @@ export function ChatRoom(props: ChatRoomProps) {
         answer: a,
         self: a.author.id === meId,
         authorName: a.author.nickname,
+        authorRole: a.author.role,
         at: Date.parse(a.created_at),
         body: a.body,
         media: a.media,
@@ -196,13 +198,14 @@ export function ChatRoom(props: ChatRoomProps) {
         out.push({ type: "date", key: `date-${p.key}`, label: formatDateDivider(p.at, now) });
       }
       if (p.key === "question") {
+        const author = `${question?.author.nickname ?? "有人"}${question?.author.role === "bot" ? "（機器人）" : ""}`;
         out.push({
           type: "note",
           key: "asked-note",
           text:
             props.category === "uncategorized" || props.category === "other"
-              ? `${question?.author.nickname ?? "有人"} 開了一個新問題`
-              : `${question?.author.nickname ?? "有人"} 開了一個「${label}」的問題`,
+              ? `${author} 開了一個新問題`
+              : `${author} 開了一個「${label}」的問題`,
         });
       }
       const first =
@@ -239,7 +242,7 @@ export function ChatRoom(props: ChatRoomProps) {
     if (lastSelf || sending || nearBottomRef.current) {
       list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
     }
-  }, [lastKey, lastSelf, sending]);
+  }, [lastKey, lastSelf, sending, question?.status]);
 
   useEffect(() => {
     const list = listRef.current;
@@ -258,7 +261,7 @@ export function ChatRoom(props: ChatRoomProps) {
   async function sendText() {
     const trimmed = text.trim();
     if ((!trimmed && pendingMedia.length === 0) || sending || checkingVideo) return;
-    if (trimmed.length > META.limits.question_body_max_chars) {
+    if (trimmed.length > limits.question_body_max_chars) {
       notify("字數太多了，請分幾次傳送", "error");
       return;
     }
@@ -293,16 +296,16 @@ export function ChatRoom(props: ChatRoomProps) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
     if (files.length === 0) return;
-    if (files.length + pendingMedia.length > META.limits.media_per_post_max) {
-      notify(`一則訊息最多附加 ${META.limits.media_per_post_max} 個檔案`, "error");
+    if (files.length + pendingMedia.length > limits.media_per_post_max) {
+      notify(`一則訊息最多附加 ${limits.media_per_post_max} 個檔案`, "error");
       return;
     }
     if (files.some((f) => !IMAGE_TYPES.includes(f.type))) {
       notify("照片格式要是 JPEG、PNG 或 WebP", "error");
       return;
     }
-    if (files.some((f) => f.size > META.limits.image_max_bytes)) {
-      notify("照片太大了，每張不能超過 10 MB", "error");
+    if (files.some((f) => f.size > limits.image_max_bytes)) {
+      notify(`照片太大了，每張不能超過 ${Math.round(limits.image_max_bytes / 1024 / 1024)} MB`, "error");
       return;
     }
     setPendingMedia((current) => [...current, ...files.map((file) => ({ id: crypto.randomUUID(), kind: "image" as const, file }))]);
@@ -312,23 +315,29 @@ export function ChatRoom(props: ChatRoomProps) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    if (pendingMedia.length >= META.limits.media_per_post_max) {
-      notify(`一則訊息最多附加 ${META.limits.media_per_post_max} 個檔案`, "error");
+    if (pendingMedia.length >= limits.media_per_post_max) {
+      notify(`一則訊息最多附加 ${limits.media_per_post_max} 個檔案`, "error");
       return;
     }
     if (!VIDEO_TYPES.includes(file.type.split(";")[0])) {
-      notify("影片格式要是 MP4、WebM 或 MOV", "error");
+      notify("影片格式要是 MP4 或 WebM", "error");
       return;
     }
-    if (file.size > VIDEO_MAX_BYTES) {
-      notify(`影片太大了，不能超過 ${Math.round(VIDEO_MAX_BYTES / 1024 / 1024)} MB，請錄短一點`, "error");
+    const maxBytes = limits.video_max_bytes ?? VIDEO_MAX_BYTES;
+    const maxSeconds = limits.video_max_seconds ?? VIDEO_MAX_SECONDS;
+    if (file.size > maxBytes) {
+      notify(`影片太大了，不能超過 ${Math.round(maxBytes / 1024 / 1024)} MB，請錄短一點`, "error");
       return;
     }
     setCheckingVideo(true);
     const duration = await readVideoDuration(file);
     setCheckingVideo(false);
-    if (duration && duration > VIDEO_MAX_SECONDS) {
-      notify(`影片太長了，最長 ${Math.round(VIDEO_MAX_SECONDS / 60)} 分鐘，請錄短一點`, "error");
+    if (!duration) {
+      notify("無法讀取影片長度，請改用 MP4 或 WebM 影片", "error");
+      return;
+    }
+    if (duration > maxSeconds) {
+      notify(`影片太長了，最長 ${maxSeconds} 秒，請錄短一點`, "error");
       return;
     }
     setPendingMedia((current) => [...current, { id: crypto.randomUUID(), kind: "video", file, duration }]);
@@ -374,24 +383,6 @@ export function ChatRoom(props: ChatRoomProps) {
     }
   }
 
-  const banner = !question
-    ? null
-    : question.status === "resolved"
-      ? { text: "這個問題已經解決了", className: "bg-tp-gray-500/15 text-tp-gray-700" }
-      : !isAuthor
-        ? { text: "加入討論，分享你的回答", className: "bg-tp-gray-100 text-tp-gray-700" }
-        : null;
-
-  const subtitle = !question
-    ? "還沒送出"
-    : question.status === "resolved"
-      ? "已解決"
-      : question.status === "in_progress"
-        ? "協助中"
-        : othersCount === 0
-          ? "等待回答"
-          : `${othersCount} 個回答`;
-
   return (
     <div
       ref={rootRef}
@@ -407,25 +398,8 @@ export function ChatRoom(props: ChatRoomProps) {
         if (dx < -85 && Math.abs(dx) > Math.abs(dy) * 1.4) props.onBack();
       }}
     >
-        <header className="flex h-16 shrink-0 items-center gap-1 pr-1 pl-4">
-          <div className="min-w-0 flex-1">
-            <h1 className="flex items-center gap-1 text-[17px] leading-tight font-bold text-tp-gray-950">
-              <span className="truncate">
-                {question ? "討論串" : "新問題"}
-              </span>
-              {members > 1 && <span className="shrink-0 font-normal">({members})</span>}
-            </h1>
-            <p className="truncate text-[13px] text-tp-gray-700">{subtitle}</p>
-          </div>
-          {question && (
-            <IconButton label="問題選單" onClick={() => setDrawerOpen(true)}>
-              <Menu className="size-7" />
-            </IconButton>
-          )}
-        </header>
-
       {question && !isAuthor && question.category === "uncategorized" && (
-        <div className="mx-3 mb-2 flex shrink-0 items-center gap-2 rounded-xl bg-white px-3 py-2 ring-1 ring-tp-gray-100">
+        <div className="mx-3 my-2 flex shrink-0 items-center gap-2 rounded-xl bg-white px-3 py-2 ring-1 ring-tp-gray-100">
           <Tag className="size-5 shrink-0 text-tp-primary-500" />
           <span className="min-w-0 flex-1 text-[15px] text-tp-gray-900">這題還沒有分類</span>
           <button
@@ -471,83 +445,91 @@ export function ChatRoom(props: ChatRoomProps) {
         </Sheet>
       )}
 
-      {banner && <p className={cn("flex shrink-0 items-center justify-center gap-1.5 px-3 py-2 text-center text-[15px] font-medium", banner.className)}>
-        {question?.status === "resolved" && <CircleCheckBig className="size-4" />}{banner.text}
-      </p>}
-      {canResolve && <button type="button" onClick={resolve} disabled={resolving} className="mx-3 mb-2 flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-tp-primary-50 px-3 text-[15px] font-semibold text-tp-primary-500 disabled:opacity-50">
-        {resolving ? <LoaderCircle className="size-5 animate-spin" /> : <CircleCheckBig className="size-5" />}
-        標記為已解決
-      </button>}
 
-      <div
-        ref={listRef}
-        onScroll={handleScroll}
-        className="relative flex-1 overflow-y-auto px-3 pt-1 pb-3"
-        aria-live="polite"
-      >
-        {items.map((item) => {
-          if (item.type === "date") {
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={listRef}
+          onScroll={handleScroll}
+          className="h-full overflow-y-auto px-3 pt-1 pb-3"
+          aria-live="polite"
+        >
+          {items.map((item) => {
+            if (item.type === "date") {
+              return (
+                <div
+                  key={item.key}
+                  className="my-3 flex justify-center"
+                >
+                  <span className="rounded-full bg-tp-gray-100 px-3 py-0.5 text-[12px] text-tp-gray-800">
+                    {item.label}
+                  </span>
+                </div>
+              );
+            }
+            if (item.type === "note") {
+              return (
+                <div
+                  key={item.key}
+                  className="my-3 flex justify-center px-4"
+                >
+                  <span className="rounded-2xl bg-tp-gray-100 px-4 py-2.5 text-center text-[15px] leading-relaxed whitespace-pre-wrap text-tp-gray-800">
+                    {item.text}
+                  </span>
+                </div>
+              );
+            }
             return (
-              <div
+              <PostRow
                 key={item.key}
-                className="my-3 flex justify-center"
-              >
-                <span className="rounded-full bg-tp-gray-100 px-3 py-0.5 text-[12px] text-tp-gray-800">
-                  {item.label}
-                </span>
-              </div>
+                post={item.post}
+                first={item.first}
+                onMenu={openMenu}
+                onOpenImage={setLightbox}
+                onToggleLike={toggleLike}
+                likeBusy={item.post.answer ? likingIds.has(item.post.answer.id) : false}
+              />
             );
-          }
-          if (item.type === "note") {
-            return (
-              <div
-                key={item.key}
-                className="my-3 flex justify-center px-4"
-              >
-                <span className="rounded-2xl bg-tp-gray-100 px-4 py-2.5 text-center text-[15px] leading-relaxed whitespace-pre-wrap text-tp-gray-800">
-                  {item.text}
-                </span>
-              </div>
-            );
-          }
-          return (
-            <PostRow
-              key={item.key}
-              post={item.post}
-              first={item.first}
-              onMenu={openMenu}
-              onOpenImage={setLightbox}
-              onToggleLike={toggleLike}
-              likeBusy={item.post.answer ? likingIds.has(item.post.answer.id) : false}
-            />
-          );
-        })}
-        {sending && (
-          <div className="mt-3 flex justify-end">
-            <span className="flex items-center gap-1.5 rounded-full bg-tp-primary-50 px-3 py-1.5 text-[13px] text-tp-primary-500">
-              <LoaderCircle className="size-3.5 animate-spin" />
-              傳送中…
-            </span>
-          </div>
+          })}
+          {question?.status === "resolved" && (
+            <div className="my-3 flex justify-center px-4">
+              <p className="flex items-center gap-1.5 rounded-2xl bg-tp-gray-500/15 px-4 py-2.5 text-center text-[15px] leading-relaxed text-tp-gray-700">
+                <CircleCheckBig className="size-4 shrink-0" />
+                這個問題已經解決了
+              </p>
+            </div>
+          )}
+          {sending && (
+            <div className="mt-3 flex justify-end">
+              <span className="flex items-center gap-1.5 rounded-full bg-tp-primary-50 px-3 py-1.5 text-[13px] text-tp-primary-500">
+                <LoaderCircle className="size-3.5 animate-spin" />
+                傳送中…
+              </span>
+            </div>
+          )}
+        </div>
+
+        {showJump && (
+          <button
+            type="button"
+            aria-label="捲到最新回答"
+            onClick={() =>
+              listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" })
+            }
+            className="absolute right-3 bottom-3 z-10 flex size-11 items-center justify-center rounded-full bg-tp-gray-50 text-tp-gray-800 shadow-md ring-1 ring-tp-gray-100"
+          >
+            <ChevronDown className="size-5" />
+          </button>
         )}
       </div>
 
-      {showJump && (
-        <button
-          type="button"
-          aria-label="捲到最新回答"
-          onClick={() =>
-            listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" })
-          }
-          className="absolute right-3 bottom-24 z-10 flex size-11 items-center justify-center rounded-full bg-tp-gray-50 text-tp-gray-800 shadow-md ring-1 ring-tp-gray-100"
-        >
-          <ChevronDown className="size-5" />
-        </button>
-      )}
+      {canResolve && <button type="button" onClick={() => setConfirm({ kind: "resolve" })} disabled={resolving} className="mx-3 my-2 flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-tp-primary-50 px-3 text-[15px] font-semibold text-tp-primary-500 disabled:opacity-50">
+        {resolving ? <LoaderCircle className="size-5 animate-spin" /> : <CircleCheckBig className="size-5" />}
+        標記為已完成
+      </button>}
 
       {recording ? (
         <VoiceRecorder
-          maxSeconds={META.limits.audio_max_seconds}
+          maxSeconds={limits.audio_max_seconds}
           onCancel={() => setRecording(false)}
           onDone={(blob, duration) => {
             setRecording(false);
@@ -604,12 +586,13 @@ export function ChatRoom(props: ChatRoomProps) {
           )}
           <div className="flex min-w-0 items-end gap-0.5">
           {!question && <IconButton label="發問額外選項" onClick={() => { setAttachmentMenuOpen(false); setDraftOptionsOpen((open) => !open); }} className="max-[300px]:size-10"><MoreHorizontal className="size-6" /></IconButton>}
+          {question && <IconButton label="問題選單" onClick={() => { setAttachmentMenuOpen(false); setDrawerOpen(true); }} className="max-[300px]:size-10"><Menu className="size-6" /></IconButton>}
           <IconButton label="新增附件" disabled={sending || checkingVideo} onClick={() => { setDraftOptionsOpen(false); setAttachmentMenuOpen((open) => !open); }} className="max-[300px]:size-10"><Plus className="size-7" /></IconButton>
           <div className="mx-1 flex min-h-12 min-w-0 flex-1 items-end rounded-[24px] bg-tp-gray-100/70 px-4 max-[300px]:px-2">
             <textarea
               rows={1}
               value={text}
-              maxLength={META.limits.question_body_max_chars}
+              maxLength={limits.question_body_max_chars}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={question ? "補充說明…" : "請輸入您的問題…"}
@@ -658,7 +641,7 @@ export function ChatRoom(props: ChatRoomProps) {
         hidden
         onChange={handlePickFiles}
       />
-      <input ref={recordVideoRef} type="file" accept="video/*" capture="environment" hidden onChange={handlePickVideo} />
+      <input ref={recordVideoRef} type="file" accept={VIDEO_TYPES.join(",")} capture="environment" hidden onChange={handlePickVideo} />
       <input ref={videoRef} type="file" accept={VIDEO_TYPES.join(",")} hidden onChange={handlePickVideo} />
 
       {menu && (
@@ -692,6 +675,19 @@ export function ChatRoom(props: ChatRoomProps) {
             setConfirm(null);
             setDrawerOpen(false);
             await props.onWithdraw();
+          }}
+        />
+      )}
+
+      {confirm?.kind === "resolve" && (
+        <ConfirmDialog
+          title="標記問題為已完成？"
+          body="標記後討論仍可繼續，您也可以繼續採納回答。"
+          confirmLabel="確認完成"
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => {
+            setConfirm(null);
+            void resolve();
           }}
         />
       )}
@@ -796,9 +792,10 @@ function PostRow({
         className={cn("flex justify-end pl-12 max-[300px]:pl-1", first ? "mt-3" : "mt-1")}
       >
         <div className="grid w-fit max-w-full min-w-0 grid-cols-[auto_minmax(0,1fr)] items-end gap-x-1.5">
-          <span className="col-start-1 row-start-1">{time}</span>
-          <div className="col-start-2 row-start-1 min-w-0">{bubbles}</div>
-          {like && <span className="col-start-2 row-start-2 mt-1">{like}</span>}
+          {post.authorRole === "bot" && <span className="col-start-2 row-start-1 justify-self-end text-[12px] font-semibold text-tp-primary-500">機器人</span>}
+          <span className={cn("col-start-1", post.authorRole === "bot" ? "row-start-2" : "row-start-1")}>{time}</span>
+          <div className={cn("col-start-2 min-w-0", post.authorRole === "bot" ? "row-start-2" : "row-start-1")}>{bubbles}</div>
+          {like && <span className={cn("col-start-2 mt-1", post.authorRole === "bot" ? "row-start-3" : "row-start-2")}>{like}</span>}
         </div>
       </div>
     );
@@ -815,8 +812,9 @@ function PostRow({
       <div className="w-9 shrink-0 max-[300px]:hidden">{first && <Avatar name={post.authorName} size={36} />}</div>
       <div className="flex min-w-0 flex-col items-start">
         {first && (
-          <span className="mb-1 max-w-full truncate text-[13px] text-tp-gray-800">
-            {post.authorName}
+          <span className="mb-1 flex max-w-full items-center gap-1.5 text-[13px] text-tp-gray-800">
+            <span className="truncate">{post.authorName}</span>
+            {post.authorRole === "bot" && <span className="shrink-0 rounded-full bg-tp-primary-50 px-1.5 font-semibold text-tp-primary-500">機器人</span>}
           </span>
         )}
         <div className="grid w-fit max-w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-x-1.5">

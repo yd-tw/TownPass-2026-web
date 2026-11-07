@@ -1,7 +1,6 @@
 "use client";
 
 import { MapPin, MessageCircle, Search, X } from "lucide-react";
-import { useState } from "react";
 import { Avatar } from "@/app/ui/line/avatar";
 import type { QuestionDetail } from "@/app/ui/line/api/types";
 import { categoryLabel } from "@/app/ui/line/categories";
@@ -16,6 +15,12 @@ function timeAgo(value: string, now: number) {
 
 export function ForumFeed({
   questions,
+  baseQuestions,
+  search,
+  onSearchChange,
+  onLoadMore,
+  hasMore,
+  loadingMore,
   nickname,
   now,
   loading,
@@ -23,43 +28,60 @@ export function ForumFeed({
   onOpen,
 }: {
   questions: QuestionDetail[];
+  baseQuestions: QuestionDetail[];
+  search: string;
+  onSearchChange: (value: string) => void;
+  onLoadMore: () => void;
+  hasMore: boolean;
+  loadingMore: boolean;
   nickname: string;
   now: number;
   loading: boolean;
   onAsk: () => void;
   onOpen: (id: string) => void;
 }) {
-  const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
-  const visible = questions.filter((question) =>
-    !query || [question.body ?? "", ...(question.tags ?? [])].join(" ").toLowerCase().includes(query),
-  );
+  const ids = new Set(questions.map((question) => question.id));
+  const visible = query
+    ? [
+        ...questions,
+        ...baseQuestions.filter((question) => !ids.has(question.id) && (question.body ?? "").toLowerCase().includes(query)),
+      ]
+    : questions;
 
   return (
     <div className="relative flex h-full flex-col bg-tp-gray-50">
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div
+        className="min-h-0 flex-1 overflow-y-auto"
+        onScroll={(event) => {
+          const list = event.currentTarget;
+          if (hasMore && !loading && !loadingMore && list.scrollHeight - list.scrollTop - list.clientHeight < 180) onLoadMore();
+        }}
+      >
       <div className="px-4 pt-4 pb-3">
         <label className="flex h-11 items-center gap-2 rounded-xl bg-tp-gray-100/70 px-3.5 text-tp-gray-600">
           <Search className="size-5 shrink-0" />
           <input
-            aria-label="搜尋問題或標籤"
-            placeholder="搜尋問題或標籤"
+            aria-label="搜尋標籤與已載入的問題內容"
+            placeholder="搜尋標籤或問題內容"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            onKeyDown={(event) => { if (event.key === "Escape") setSearch(""); }}
+            maxLength={50}
+            onChange={(event) => onSearchChange(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Escape") onSearchChange(""); }}
             className="min-w-0 flex-1 bg-transparent text-[15px] text-tp-gray-950 outline-none placeholder:text-tp-gray-600"
           />
           {search && (
             <button
               type="button"
               aria-label="清除搜尋"
-              onClick={() => setSearch("")}
+              onClick={() => onSearchChange("")}
               className="flex size-8 items-center justify-center rounded-full bg-tp-gray-400 text-white"
             >
               <X className="size-4" />
             </button>
           )}
         </label>
+        {query && <p className="px-1 pt-2 text-[12px] text-tp-gray-600">標籤搜尋全部討論；內文搜尋已載入的討論</p>}
       </div>
 
         <button
@@ -84,8 +106,11 @@ export function ForumFeed({
             className="block w-full px-4 py-3 text-left transition-colors hover:bg-tp-gray-100/35 active:bg-tp-gray-100/55"
           >
             <span className="flex gap-2.5">
-              <Avatar name={question.author.nickname} size={40} />
-              <span className="flex flex-col">
+              <span className="flex shrink-0 flex-col items-center gap-1">
+                <Avatar name={question.author.nickname} size={40} />
+                {question.author.role === "bot" && <span className="text-[11px] font-semibold text-tp-primary-500">機器人</span>}
+              </span>
+              <span className="min-w-0 flex flex-col">
                 <span className="block line-clamp-3 text-[15px] leading-relaxed whitespace-pre-wrap text-tp-gray-900">{question.body ?? "內容待確認"}</span>
                 <span className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-tp-gray-600">
                   <span className="flex items-center gap-1" aria-label={`${question.answer_count} 則留言`}><MessageCircle className="size-4" />{question.answer_count}</span>
@@ -107,6 +132,11 @@ export function ForumFeed({
             </span>
           </button>
         ))}
+        {hasMore && !loading && (
+          <button type="button" onClick={onLoadMore} disabled={loadingMore} className="min-h-11 w-full text-[15px] font-medium text-tp-primary-500 disabled:opacity-50">
+            {loadingMore ? "載入更多討論…" : "載入更多討論"}
+          </button>
+        )}
       </div>
     </div>
   );

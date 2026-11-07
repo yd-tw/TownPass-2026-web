@@ -58,7 +58,7 @@ export function formatDateDivider(at: number, now: number) {
 
 /** 聊天列表的最新回答預覽：「王小姐：可以用台北通繳費」 */
 export function answerPreview(a: Answer, meId: string) {
-  const who = a.author.id === meId ? "你" : a.author.nickname;
+  const who = a.author.id === meId ? "你" : `${a.author.nickname}${a.author.role === "bot" ? "（機器人）" : ""}`;
   if (a.body) return `${who}：${a.body}`;
   if (a.media.some((m) => m.kind === "audio")) return `${who}傳送了語音訊息`;
   if (a.media.some((m) => m.kind === "video")) return `${who}傳送了影片`;

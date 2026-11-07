@@ -66,12 +66,12 @@ function audioFileName(type: string) {
   return { name: "voice.webm", type: "audio/webm" };
 }
 
-/** iPhone 錄的是 MOV（video/quicktime），Android 多半是 MP4 */
+/** 後端只接受 MP4 或 WebM */
 function videoFileName(type: string) {
   const base = type.split(";")[0];
-  if (base === "video/quicktime") return { name: "video.mov", type: base };
   if (base === "video/webm") return { name: "video.webm", type: base };
-  return { name: "video.mp4", type: "video/mp4" };
+  if (base === "video/mp4") return { name: "video.mp4", type: base };
+  throw new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "影片只支援 MP4 或 WebM");
 }
 
 /**
@@ -204,10 +204,14 @@ export function createHttpApi(
     listMyQuestions: () => all<QuestionSummary>("/questions?author=me&sort=latest"),
 
     async listForumQuestions(filter) {
-      const category = filter?.category ? `&category=${encodeURIComponent(filter.category)}` : "";
+      const query = new URLSearchParams({ scope: "global", limit: String(FORUM_LIMIT) });
+      if (filter?.category) query.set("category", filter.category);
+      if (filter?.tagQuery) query.set("tag_q", filter.tagQuery);
+      else query.set("sort", "latest");
+      if (filter?.cursor) query.set("cursor", filter.cursor);
       const env = await request<QuestionSummary[]>(
         "GET",
-        `/questions?scope=global&sort=latest&limit=${FORUM_LIMIT}${category}`,
+        `/questions?${query}`,
       );
       const list = env?.data ?? [];
       // 列表只有標題，內文要看詳情；被撤回（404）的就略過
@@ -218,7 +222,10 @@ export function createHttpApi(
           ),
         ),
       );
-      return details.filter((d): d is QuestionDetail => d !== null);
+      return {
+        questions: details.filter((d): d is QuestionDetail => d !== null),
+        nextCursor: env?.next_cursor ?? null,
+      };
     },
 
     getQuestion: (id) => data<QuestionDetail>("GET", `/questions/${encodeURIComponent(id)}`),
@@ -259,19 +266,13 @@ export function createHttpApi(
       const form = new FormData();
       form.append("kind", kind);
       if (kind === "video") {
-        // 假設後端之後會照語音的格式支援 kind=video（duration_seconds 選填）
-        const { name, type } = videoFileName(file.type);
-        if (durationSeconds) form.append("duration_seconds", String(Math.round(durationSeconds)));
-        form.append("file", new File([file], name, { type }));
-        try {
-          return await data<Media>("POST", "/media", form);
-        } catch (e) {
-          // 後端還沒實作時會回 400：kind 只允許 image、audio
-          if (e instanceof ApiError && e.code === "VALIDATION_ERROR" && e.message.includes("kind")) {
-            throw new ApiError(e.status, "VIDEO_NOT_SUPPORTED", "伺服器還不能收影片，請先改用拍照或錄音");
-          }
-          throw e;
+        if (!durationSeconds || !Number.isFinite(durationSeconds)) {
+          throw new ApiError(400, "VALIDATION_ERROR", "無法取得影片長度，請改用其他影片");
         }
+        const { name, type } = videoFileName(file.type);
+        form.append("duration_seconds", String(Math.ceil(durationSeconds)));
+        form.append("file", new File([file], name, { type }));
+        return data<Media>("POST", "/media", form);
       } else if (kind === "audio") {
         const { name, type } = audioFileName(file.type);
         form.append("duration_seconds", String(durationSeconds ?? 0));

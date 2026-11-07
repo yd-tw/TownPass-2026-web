@@ -1,6 +1,6 @@
 # 後端 API 規格
 
-這份文件列出後端全部 32 支 API、即時事件和資料結構，給串接的前端和 Flutter 使用。
+這份文件列出後端全部 47 支 API、即時事件和資料結構，給串接的前端和 Flutter 使用。
 
 - **Base URL：** `https://tpcodefest.mcloudtw.com/api/v1`
 - **平台：** 只支援 Android
@@ -25,7 +25,6 @@ curl -X POST $BASE/questions \
   -d '{
     "body": "這張公文是什麼意思？",
     "language": "zh-TW",
-    "category": "document_contract",
     "assistance_mode": "online",
     "location_sharing": "off",
     "client_request_id": "<前端產生的唯一值>"
@@ -39,8 +38,11 @@ curl -X POST $BASE/questions \
 - **成功回應：** `{ "data": ... }`。
 - **分頁：** 列表回傳 `next_cursor`，把它放進下一次的 `cursor`；值為 `null` 表示沒有下一頁。參數 `limit` 可填 1 到 50，預設 20。
 - **防重送：** 網路不穩時，用相同的 `client_request_id` 重送，不會重複建立內容。
+- **分類：** 發問時可不填 `category`，由分類器判斷；信心不足時為 `uncategorized`，由志工用 `PUT /questions/{question_id}/category` 分類。
+- **標籤：** 除了分類，問題可帶最多 5 個自訂標籤。用 `GET /questions?tag_q=關鍵字` 模糊搜尋問題，用 `GET /tags?q=關鍵字` 做自動完成。
 - **媒體：** 先呼叫 `POST /media` 取得 `id`，再放進問題或回答的 `media_ids`。超過 24 小時未使用的檔案會被刪除。
-- **不會回傳的資料：** 倒讚數和可信度評分只留在後端。
+- **不會回傳的資料：** 倒讚數只留在後端；可信度評分只有管理員 API 看得到。
+- **身份：** 使用者資料都有 `role`：`user`、`admin`、`bot`。`bot` 的權限和一般使用者相同，前端要標示它是機器人。
 
 ### 錯誤格式
 
@@ -57,6 +59,7 @@ curl -X POST $BASE/questions \
 | 403 | `SELF_ACTION_NOT_ALLOWED` | 採納、投票或接案的對象是自己 |
 | 403 | `LOCATION_SHARING_OFF` | 位置分享已關閉，不能接現場任務 |
 | 403 | `ASSIST_NOT_ALLOWED` | 目前不能接現場任務 |
+| 403 | `ACCOUNT_BANNED` | 帳號已被停權 |
 | 404 | `NOT_FOUND` | 不存在或已撤回 |
 | 409 | `ALREADY_ACCEPTED` | 問題已有採納的回答 |
 | 409 | `ANSWER_ACCEPTED` | 已採納的回答不能刪除 |
@@ -105,9 +108,15 @@ socket.on('answers.changed', ({ question_id }) => refetchAnswers(question_id));
 
 `GET /notifications/stream` 只傳 `notification.created`，內容是 [Notification](#notification)。WebView 請用 `@microsoft/fetch-event-source`，因為原生 `EventSource` 不能帶 `Authorization` 標頭。
 
-通知的 `type`：`nearby_question`、`new_answer`、`answer_accepted`、`assist_claimed`、`assist_arrived`、`assist_completed`、`assist_cancelled`、`pii_report_pending`、`pii_report_resolved`、`badge_earned`。
+通知的 `type`：`nearby_question`、`new_answer`、`answer_accepted`、`assist_claimed`、`assist_arrived`、`assist_completed`、`assist_cancelled`、`pii_report_pending`、`pii_report_resolved`、`badge_earned`、`content_moderated`。
 
-Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat` 取回未送達的通知。
+SSE 負責即時更新畫面。推播由 FCM 負責，兩者都會收到同一則通知，所以收到 SSE 時只更新畫面，不要再呼叫 `notify`。
+
+### FCM 推播
+
+每次載入頁面或登入後，用 `PUT /push-tokens/{token}` 上傳 token（`token` 要用 `encodeURIComponent` 編碼），登出時用 `DELETE`。
+
+推播的 `notification` 帶 `title` 和 `body`，`data` 帶 `notification_id`、`type`，有問題時另帶 `question_id` 和 `url`。**不帶精確位置。**
 
 ## 不在 `/api/v1` 下的公開路由
 
@@ -125,12 +134,15 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 | GET | `/me` | 取得自己的資料與設定 | 是 |
 | PATCH | `/me` | 更新暱稱、語言與附近通知設定 | 是 |
 | POST | `/me/heartbeat` | 回報位置並取回未送達的通知 | 是 |
-| POST | `/media` | 上傳圖片或語音 | 是 |
+| POST | `/media` | 上傳圖片、語音或影片 | 是 |
 | GET | `/questions` | 問題列表（論壇與任務板共用） | 是 |
 | POST | `/questions` | 發問 | 是 |
 | GET | `/questions/{question_id}` | 問題詳情 | 是 |
-| POST | `/questions/{question_id}/resolve` | 提問者直接標記問題已解決 | 是 |
 | DELETE | `/questions/{question_id}` | 撤回問題 | 是 |
+| POST | `/questions/{question_id}/resolve` | 發問者標記問題已解決 | 是 |
+| PUT | `/questions/{question_id}/tags` | 設定問題的自訂標籤 | 是 |
+| GET | `/tags` | 搜尋標籤 | 是 |
+| PUT | `/questions/{question_id}/category` | 替問題分類 | 是 |
 | GET | `/questions/{question_id}/answers` | 回答列表 | 是 |
 | POST | `/questions/{question_id}/answers` | 回答問題 | 是 |
 | DELETE | `/answers/{answer_id}` | 刪除自己的回答 | 是 |
@@ -152,6 +164,17 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 | GET | `/notifications` | 通知列表 | 是 |
 | POST | `/notifications/read` | 標記已讀 | 是 |
 | GET | `/notifications/stream` | SSE 個人通知串流 | 是 |
+| POST | `/classify` | 試算問題分類 | 否 |
+| PUT | `/push-tokens/{token}` | 註冊或更新此裝置的 FCM token | 是 |
+| DELETE | `/push-tokens/{token}` | 取消此裝置的推播 | 是 |
+| GET | `/admin/users` | 列出使用者 | 是 |
+| PUT | `/admin/users/{user_id}/role` | 設定使用者身份 | 是 |
+| POST | `/admin/users/{user_id}/ban` | 停權 | 是 |
+| POST | `/admin/users/{user_id}/unban` | 解除停權 | 是 |
+| PATCH | `/admin/questions/{question_id}` | 修改問題內容 | 是 |
+| PATCH | `/admin/answers/{answer_id}` | 修改回答內容 | 是 |
+| GET | `/admin/pii-reports` | 列出所有個資標記 | 是 |
+| GET | `/admin/audit-log` | 稽核紀錄 | 是 |
 | GET | `/meta` | 前端需要的列舉與限制 | 否 |
 | GET | `/healthz` | 健康檢查 | 否 |
 
@@ -164,6 +187,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 
 前端先向 App 取得 `userinfo`，再只傳下列欄位。不要傳 `realName`、`idNo`、`phoneNo` 等個資。
 這不是真正的身分驗證：`userinfo` 沒有 token 或簽章，後端無法確認真偽。
+管理員和機器人由伺服器名單或管理員指定，不能由前端宣告。已停權的帳號回傳 403 `ACCOUNT_BANNED`。
 
 **請求內容**（`application/json`）
 
@@ -183,7 +207,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 | `expires_at` | string（時間） | 是 |  |
 | `user` | [Me](#me) | 是 |  |
 
-- 錯誤：`400`
+- 錯誤：`400`、`403`
 
 ## 個人資料
 
@@ -242,22 +266,67 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 
 - 錯誤：`400`、`401`
 
+## 推播
+
+### PUT /push-tokens/{token}
+
+註冊或更新此裝置的 FCM token。
+
+以 token 為唯一鍵 upsert，綁定到目前登入的使用者；同一使用者可有多支裝置，最多保留最近 10 個。
+token 會因重裝 App、清除資料或 FCM 輪替而改變，且 App 不會主動通知網頁，
+所以每次載入頁面或登入後都要呼叫 `push_token` 並重新上傳。`push_token` 回傳 `null` 時不用呼叫。
+
+**參數**
+
+| 名稱 | 位置 | 型別 | 必填 | 說明 |
+|---|---|---|---|---|
+| `token` | 路徑 | string | 是 | 城市通 `push_token` 取得的 FCM token，要用 `encodeURIComponent` 編碼。最長 4096 字 |
+
+**請求內容**（`application/json`）
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `platform` | `android` \| `ios` | 是 |  |
+
+**回應**
+
+- `204`：已註冊，沒有內容
+- 錯誤：`400`、`401`
+
+### DELETE /push-tokens/{token}
+
+取消此裝置的推播。
+
+只會刪除屬於自己的 token；token 不存在時一樣回 204。
+
+**參數**
+
+| 名稱 | 位置 | 型別 | 必填 | 說明 |
+|---|---|---|---|---|
+| `token` | 路徑 | string | 是 | 城市通 `push_token` 取得的 FCM token，要用 `encodeURIComponent` 編碼。最長 4096 字 |
+
+**回應**
+
+- `204`：已取消，沒有內容
+- 錯誤：`400`、`401`
+
 ## 媒體
 
 ### POST /media
 
-上傳圖片或語音。
+上傳圖片、語音或影片。
 
 圖片必須已在手機端完成個資遮蔽。後端會重新編碼圖片並移除 EXIF（含 GPS）。
+語音和影片不會重新編碼，檔內的中繼資料（可能含 GPS）會保留，前端要提醒使用者不要拍到個資。
 超過 24 小時未被問題或回答引用的檔案會被刪除。
 
 **請求內容**（`multipart/form-data`）
 
 | 欄位 | 型別 | 必填 | 說明 |
 |---|---|---|---|
-| `file` | 檔案 | 是 | 圖片：JPEG、PNG、WebP，最大 10 MB；語音：M4A、AAC、MP3、WebM，最長 3 分鐘 |
-| `kind` | `image` \| `audio` | 是 |  |
-| `duration_seconds` | number |  | kind 為 audio 時必填 |
+| `file` | 檔案 | 是 | 圖片：JPEG、PNG、WebP，最大 10 MB；語音：M4A、AAC、MP3、WebM，最大 20 MB、最長 3 分鐘；影片：MP4、WebM，最大 20 MB、最長 60 秒 |
+| `kind` | `image` \| `audio` \| `video` | 是 |  |
+| `duration_seconds` | number |  | kind 為 audio 或 video 時必填，由前端提供，後端不驗證實際長度 |
 
 **回應**
 
@@ -272,6 +341,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 
 `scope=nearby` 或 `sort=nearest` 時必須帶 `lat`、`lng`。
 任務板不是另一個資源，而是此列表依 `reward_points` 與 `can_claim` 呈現的畫面。
+`tag`、`tag_q` 可和其他條件同時使用，例如 `tag_q=詐騙&status=open`。
 `sort=unanswered` 只回傳還沒有回答的問題，由新到舊排序。
 
 **參數**
@@ -284,6 +354,8 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 | `radius_m` | query | integer |  | 最小 100，最大 5000，預設 `1000` |
 | `status` | query | [QuestionStatus](#questionstatus) |  |  |
 | `category` | query | [Category](#category) |  |  |
+| `tag` | query | string |  | 完全符合這個標籤（不分大小寫、全半形、臺台） |
+| `tag_q` | query | string |  | 模糊搜尋標籤；沒指定 sort 且 scope 為 global 時依相似度排序。最長 50 字 |
 | `language` | query | [LanguageTag](#languagetag) |  |  |
 | `assistance_mode` | query | [AssistanceMode](#assistancemode) |  |  |
 | `service_id` | query | string |  | 只看某個城市通功能的問題 |
@@ -302,6 +374,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 | `status` | [QuestionStatus](#questionstatus) | 是 |  |
 | `title` | string \| null | 是 | 內容待個資確認時為 null |
 | `category` | [Category](#category) | 是 |  |
+| `tags` | string[] | 是 |  |
 | `language` | [LanguageTag](#languagetag) | 是 |  |
 | `assistance_mode` | [AssistanceMode](#assistancemode) | 是 |  |
 | `location_sharing` | [LocationSharing](#locationsharing) | 是 |  |
@@ -310,6 +383,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 | `area` | [PublicArea](#publicarea) \| null |  |  |
 | `thumbnail_url` | string（URL） \| null |  |  |
 | `has_audio` | boolean |  |  |
+| `has_video` | boolean |  |  |
 | `answer_count` | integer | 是 |  |
 | `reward_points` | integer | 是 | 任務板顯示的可得積分 |
 | `can_claim` | boolean | 是 | 目前使用者能否接下現場任務 |
@@ -323,6 +397,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 發問。
 
 `body` 和 `media_ids` 至少要有一個。
+未填 `category` 時由分類器判斷；信心低於 70% 或沒有文字時為 `uncategorized`，交給志工分類。
 未填 `location_sharing` 時，採用使用者的預設等級。
 等級為 `off` 時不可帶 `location`，問題不會出現在附近列表，也不會通知附近的人；其他等級必須帶 `location`。
 `assistance_mode` 為 `onsite` 或 `either` 時，等級不可為 `off`，且 `location` 要傳精確座標。
@@ -337,7 +412,8 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 | `body` | string |  | 最長 5000 字 |
 | `media_ids` | string[] |  | 最多 5 項 |
 | `language` | [LanguageTag](#languagetag) | 是 |  |
-| `category` | [Category](#category) | 是 |  |
+| `tags` | string[] |  | 選填的自訂標籤，和 `category` 並存。每個 1 到 20 字。最多 5 項 |
+| `category` | [Category](#category) |  | 選填。未填時由分類器判斷，信心不足或沒有文字時為 `uncategorized` |
 | `assistance_mode` | [AssistanceMode](#assistancemode) | 是 |  |
 | `context` | [QuestionContext](#questioncontext) \| null |  |  |
 | `location_sharing` | [LocationSharing](#locationsharing) |  | 這個問題的位置分享等級；未填時採用使用者的預設等級 |
@@ -365,9 +441,30 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 - `200`：OK；`data` 是 [QuestionDetail](#questiondetail)
 - 錯誤：`401`、`404`
 
+### DELETE /questions/{question_id}
+
+撤回問題。
+
+僅限發問者或管理員。問題與其媒體檔立即不可存取，進行中的現場協助會一併取消。管理員的操作會保留原內容在稽核紀錄。
+
+**參數**
+
+| 名稱 | 位置 | 型別 | 必填 | 說明 |
+|---|---|---|---|---|
+| `question_id` | 路徑 | string | 是 |  |
+
+**回應**
+
+- `204`：已撤回，沒有內容
+- 錯誤：`401`、`403`、`404`
+
 ### POST /questions/{question_id}/resolve
 
-提問者直接將自己的問題標記為 `resolved`，不需採納特定回答，也可在尚無回答時使用。重複標記回傳 409 `INVALID_STATE`。
+發問者標記問題已解決。
+
+僅限發問者或管理員，不需要請求內容，也不需要留言或採納回答，沒有任何回答時也能使用。不會發積分。
+已解決的問題回傳 409 `INVALID_STATE`；現場協助進行中回傳 409 `ASSIST_ACTIVE`。
+標記後，所有人仍可回答和按讚，發問者也仍可採納回答。
 
 **參數**
 
@@ -380,11 +477,14 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 - `200`：OK；`data` 是 [QuestionDetail](#questiondetail)
 - 錯誤：`401`、`403`、`404`、`409`
 
-### DELETE /questions/{question_id}
+### PUT /questions/{question_id}/tags
 
-撤回問題。
+設定問題的自訂標籤。
 
-僅限發問者。問題與其媒體檔立即不可存取，進行中的現場協助會一併取消。
+傳入完整的標籤清單，會取代現有標籤。
+發問者和管理員可以新增或移除；其他登入者只能新增，移除別人的標籤回傳 403。低可信度帳號回傳 403。
+管理員的修改會留下稽核紀錄。
+最多 5 個，每個 1 到 20 字，只能有文字、數字、空白、`-`、`_`、`·`；開頭的 `#` 會被移除。重複的標籤會合併。
 
 **參數**
 
@@ -392,10 +492,97 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 |---|---|---|---|---|
 | `question_id` | 路徑 | string | 是 |  |
 
+**請求內容**（`application/json`）
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `tags` | string[] | 是 | 最多 5 項 |
+
 **回應**
 
-- `204`：已撤回，沒有內容
-- 錯誤：`401`、`403`、`404`
+- `200`：OK；`data` 是 [QuestionDetail](#questiondetail)
+- 錯誤：`400`、`401`、`403`、`404`
+
+### GET /tags
+
+搜尋標籤。
+
+有 `q` 時模糊比對並依相似度排序，能接受部分符合、詞序不同和打錯字；沒有 `q` 時回傳最多人使用的標籤。
+比對時不分大小寫、全半形和臺台，也忽略空白和分隔符號。可用於輸入標籤時的自動完成。
+
+**參數**
+
+| 名稱 | 位置 | 型別 | 必填 | 說明 |
+|---|---|---|---|---|
+| `q` | query | string |  | 最長 50 字 |
+| `limit` | query | integer |  | 最小 1，最大 50，預設 `20` |
+
+**回應**
+
+- `200`：OK；`data` 是 object[]
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `tag` | string | 是 |  |
+| `question_count` | integer | 是 |  |
+| `score` | number | 是 | 相似度，0 到 1；沒有 q 時為 1 |
+
+- 錯誤：`400`、`401`
+
+### PUT /questions/{question_id}/category
+
+替問題分類。
+
+任何登入者都能替 `uncategorized` 的問題分類；已分類的問題回傳 409 `INVALID_STATE`。
+發問者隨時可以修改自己的問題。不能改回 `uncategorized`，低可信度帳號回傳 403。
+管理員可以修改任何問題，也能改回 `uncategorized`，操作會留下稽核紀錄。
+分類不會獲得積分。可用 `GET /questions?category=uncategorized` 列出待分類的問題。
+
+**參數**
+
+| 名稱 | 位置 | 型別 | 必填 | 說明 |
+|---|---|---|---|---|
+| `question_id` | 路徑 | string | 是 |  |
+
+**請求內容**（`application/json`）
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `category` | [Category](#category) | 是 |  |
+
+**回應**
+
+- `200`：OK；`data` 是 [QuestionDetail](#questiondetail)
+- 錯誤：`400`、`401`、`403`、`404`、`409`
+
+### POST /classify
+
+試算問題分類。不需要 token。
+
+回傳分類器的判斷，不會儲存文字，邏輯與 `POST /questions` 未填 `category` 時相同。不需要 token。
+信心低於 `threshold` 或沒有可辨識的特徵時，`category` 是 `uncategorized`，應交給志工分類。
+
+**請求內容**（`application/json`）
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `text` | string | 是 | 最短 1，最長 5000 字 |
+
+**回應**
+
+- `200`：OK；`data` 是 object
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `category` | [Category](#category) | 是 |  |
+| `predicted` | [Category](#category) | 是 |  |
+| `confidence` | number | 是 | 最小 0，最大 1 |
+| `threshold` | number | 是 |  |
+| `scores` | object[] | 是 |  |
+| `scores[].category` | [Category](#category) | 是 |  |
+| `scores[].score` | number | 是 |  |
+
+- 錯誤：`400`、`429`
 
 ## 回答與投票
 
@@ -463,7 +650,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 
 刪除自己的回答。
 
-已被採納的回答不能刪除，回傳 409 `ANSWER_ACCEPTED`。
+已被採納的回答不能刪除，回傳 409 `ANSWER_ACCEPTED`。管理員可以刪除任何回答，已發出的積分不收回，操作會保留原內容在稽核紀錄。
 
 **參數**
 
@@ -481,6 +668,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 採納回答。
 
 僅限發問者，每題只能採納一次且不可撤銷。問題轉為 `resolved`，回答者獲得積分。
+問題已用 `POST /questions/{question_id}/resolve` 標記解決時仍可採納；現場協助已完成時回傳 409 `INVALID_STATE`。
 有進行中的現場協助時回傳 409 `ASSIST_ACTIVE`。
 
 **參數**
@@ -498,7 +686,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 
 投正讚或倒讚。
 
-每人每則回答一票，重複呼叫會覆蓋原本的票。可以對自己的回答投正讚。讚會影響回答排序與回答者的可信度評分，不影響積分。倒讚數和可信度評分不會出現在任何 API 回應中。
+所有登入者都能投票，不限發問者或參與者，問題解決後也能投。每人每則回答一票，重複呼叫會覆蓋原本的票。可以對自己的回答投正讚，但不加可信度；不能投倒讚。讚會影響回答排序與回答者的可信度評分，不影響積分。倒讚數和可信度評分不會出現在任何 API 回應中。
 
 **參數**
 
@@ -643,7 +831,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 發問者自己標記時會直接生效。
 
 - 圖片：填 `media_id` 與 `regions`
-- 語音：填 `media_id`；accept 後整段移除
+- 語音、影片：填 `media_id`；accept 後整段移除
 - 文字：填 `text_ranges`；標記問題標題時，`text_field` 填 `title`
 
 **請求內容**（`application/json`）
@@ -708,7 +896,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 
 同意遮蔽。
 
-僅限發問者。圖片會在伺服器上覆蓋不透明色塊並產生新檔與新 ID，原檔刪除；文字逐字換成 `█`，字數不變；語音整段移除。此操作不可逆。
+僅限發問者或管理員。圖片會在伺服器上覆蓋不透明色塊並產生新檔與新 ID，原檔刪除；文字逐字換成 `█`，字數不變；語音和影片整段移除。此操作不可逆。
 
 **參數**
 
@@ -725,7 +913,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 
 拒絕遮蔽並恢復顯示。
 
-僅限發問者。若同一內容還有其他待決定的標記，內容會繼續隱藏。
+僅限發問者或管理員。若同一內容還有其他待決定的標記，內容會繼續隱藏。
 
 **參數**
 
@@ -802,6 +990,219 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 
 - 錯誤：`401`
 
+## 管理員
+
+### GET /admin/users
+
+列出使用者。
+
+**參數**
+
+| 名稱 | 位置 | 型別 | 必填 | 說明 |
+|---|---|---|---|---|
+| `role` | query | [UserRole](#userrole) |  |  |
+| `q` | query | string |  | 搜尋暱稱或城市通使用者 ID |
+| `cursor` | query | string |  |  |
+| `limit` | query | integer |  | 最小 1，最大 50，預設 `20` |
+
+**回應**
+
+- `200`：OK；`data` 是 [AdminUser](#adminuser)[]，另有 `next_cursor`（string \| null）
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `id` | string | 是 |  |
+| `nickname` | string | 是 |  |
+| `points` | integer | 是 |  |
+| `role` | [UserRole](#userrole) | 是 |  |
+| `languages` | [LanguageTag](#languagetag)[] | 是 |  |
+| `nearby_notifications_enabled` | boolean | 是 |  |
+| `nearby_radius_m` | integer | 是 |  |
+| `location_sharing` | [LocationSharing](#locationsharing) | 是 |  |
+| `townpass_user_id` | string | 是 |  |
+| `trust_score` | integer | 是 |  |
+| `banned_at` | string（時間） \| null | 是 |  |
+| `ban_reason` | string \| null | 是 |  |
+| `created_at` | string（時間） | 是 |  |
+
+- 錯誤：`400`、`401`、`403`
+
+### PUT /admin/users/{user_id}/role
+
+設定使用者身份。
+
+不能變更自己的身份。名單內的 ID 下次登入時會依名單恢復。
+
+**參數**
+
+| 名稱 | 位置 | 型別 | 必填 | 說明 |
+|---|---|---|---|---|
+| `user_id` | 路徑 | string | 是 |  |
+
+**請求內容**（`application/json`）
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `role` | [UserRole](#userrole) | 是 |  |
+
+**回應**
+
+- `200`：OK；`data` 是 [AdminUser](#adminuser)
+- 錯誤：`400`、`401`、`403`、`404`
+
+### POST /admin/users/{user_id}/ban
+
+停權。
+
+立即登出、中斷即時連線並移除推播 token，也不能重新登入。不能停權自己。已發布的內容不會自動移除。
+
+**參數**
+
+| 名稱 | 位置 | 型別 | 必填 | 說明 |
+|---|---|---|---|---|
+| `user_id` | 路徑 | string | 是 |  |
+
+**請求內容**（`application/json`，選填）
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `reason` | string |  | 最長 200 字 |
+
+**回應**
+
+- `200`：OK；`data` 是 [AdminUser](#adminuser)
+- 錯誤：`401`、`403`、`404`
+
+### POST /admin/users/{user_id}/unban
+
+解除停權。
+
+**參數**
+
+| 名稱 | 位置 | 型別 | 必填 | 說明 |
+|---|---|---|---|---|
+| `user_id` | 路徑 | string | 是 |  |
+
+**回應**
+
+- `200`：OK；`data` 是 [AdminUser](#adminuser)
+- 錯誤：`401`、`403`、`404`
+
+### PATCH /admin/questions/{question_id}
+
+修改問題內容。
+
+修改前後都會留在稽核紀錄，並通知作者。有待決定的文字個資標記時回傳 409，要先處理標記。
+
+**參數**
+
+| 名稱 | 位置 | 型別 | 必填 | 說明 |
+|---|---|---|---|---|
+| `question_id` | 路徑 | string | 是 |  |
+
+**請求內容**（`application/json`）
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `title` | string |  | 最短 1，最長 80 字 |
+| `body` | string \| null |  | 最長 5000 字 |
+
+**回應**
+
+- `200`：OK；`data` 是 [QuestionDetail](#questiondetail)
+- 錯誤：`400`、`401`、`403`、`404`、`409`
+
+### PATCH /admin/answers/{answer_id}
+
+修改回答內容。
+
+修改前後都會留在稽核紀錄，並通知作者。有待決定的文字個資標記時回傳 409。
+
+**參數**
+
+| 名稱 | 位置 | 型別 | 必填 | 說明 |
+|---|---|---|---|---|
+| `answer_id` | 路徑 | string | 是 |  |
+
+**請求內容**（`application/json`）
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `body` | string | 是 | 最短 1，最長 5000 字 |
+
+**回應**
+
+- `200`：OK；`data` 是 [Answer](#answer)
+- 錯誤：`400`、`401`、`403`、`404`、`409`
+
+### GET /admin/pii-reports
+
+列出所有個資標記。
+
+發問者沒回應時內容會一直隱藏，管理員可從這裡找到並處理。
+
+**參數**
+
+| 名稱 | 位置 | 型別 | 必填 | 說明 |
+|---|---|---|---|---|
+| `status` | query | [PiiReportStatus](#piireportstatus) |  |  |
+| `cursor` | query | string |  |  |
+| `limit` | query | integer |  | 最小 1，最大 50，預設 `20` |
+
+**回應**
+
+- `200`：OK；`data` 是 [PiiReport](#piireport)[]，另有 `next_cursor`（string \| null）
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `id` | string | 是 |  |
+| `status` | [PiiReportStatus](#piireportstatus) | 是 |  |
+| `target_type` | `question` \| `answer` | 是 |  |
+| `target_id` | string | 是 |  |
+| `question_id` | string | 是 |  |
+| `media_id` | string \| null |  |  |
+| `text_field` | `body` \| `title` \| `null` |  |  |
+| `regions` | [ImageRegion](#imageregion)[] |  |  |
+| `text_ranges` | [TextRange](#textrange)[] |  |  |
+| `original_text` | string \| null |  | 僅 pending 時回傳給發問者 |
+| `preview_url` | string（URL） \| null |  | 僅 pending 時回傳的短效連結 |
+| `created_at` | string（時間） | 是 |  |
+| `resolved_at` | string（時間） \| null |  |  |
+
+- 錯誤：`400`、`401`、`403`
+
+### GET /admin/audit-log
+
+稽核紀錄。
+
+管理員的刪除和修改都會記錄，由新到舊，紀錄不能修改或刪除。
+
+**參數**
+
+| 名稱 | 位置 | 型別 | 必填 | 說明 |
+|---|---|---|---|---|
+| `action` | query | string |  |  |
+| `target_id` | query | string |  |  |
+| `admin_id` | query | string |  |  |
+| `cursor` | query | string |  |  |
+| `limit` | query | integer |  | 最小 1，最大 50，預設 `20` |
+
+**回應**
+
+- `200`：OK；`data` 是 [AuditEntry](#auditentry)[]，另有 `next_cursor`（string \| null）
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `id` | string | 是 |  |
+| `admin` | [PublicUser](#publicuser) | 是 |  |
+| `action` | string | 是 |  |
+| `target_type` | `question` \| `answer` \| `user` \| `pii_report` | 是 |  |
+| `target_id` | string | 是 |  |
+| `detail` | object | 是 | 刪除時保留原內容，修改時有 before 和 after |
+| `created_at` | string（時間） | 是 |  |
+
+- 錯誤：`400`、`401`、`403`
+
 ## 通知
 
 ### GET /notifications
@@ -823,7 +1224,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 | 欄位 | 型別 | 必填 | 說明 |
 |---|---|---|---|
 | `id` | string | 是 |  |
-| `type` | `nearby_question` \| `new_answer` \| `answer_accepted` \| `assist_claimed` \| `assist_arrived` \| `assist_completed` \| `assist_cancelled` \| `pii_report_pending` \| `pii_report_resolved` \| `badge_earned` | 是 |  |
+| `type` | `nearby_question` \| `new_answer` \| `answer_accepted` \| `assist_claimed` \| `assist_arrived` \| `assist_completed` \| `assist_cancelled` \| `pii_report_pending` \| `pii_report_resolved` \| `content_moderated` \| `badge_earned` | 是 |  |
 | `title` | string | 是 |  |
 | `body` | string | 是 |  |
 | `question_id` | string \| null |  |  |
@@ -906,6 +1307,8 @@ BCP 47 語言標籤
 
 ### Category
 
+`uncategorized` 表示分類器沒有把握，由志工之後分類；`other` 是已分類但不屬於其他類別。
+
 型別：`map_navigation` \| `admin_procedure` \| `document_contract` \| `scam_check` \| `app_usage` \| `language` \| `other` \| `uncategorized`
 
 ### AssistanceMode
@@ -951,6 +1354,12 @@ BCP 47 語言標籤
 | `district` | string \| null |  |  |
 | `distance_m` | integer \| null |  | 查詢時有帶座標才有值 |
 
+### UserRole
+
+`user` 一般使用者；`admin` 管理員；`bot` 機器人，權限和一般使用者相同，前端應標示。
+
+型別：`user` \| `admin` \| `bot`
+
 ### PublicUser
 
 | 欄位 | 型別 | 必填 | 說明 |
@@ -958,6 +1367,39 @@ BCP 47 語言標籤
 | `id` | string | 是 |  |
 | `nickname` | string | 是 |  |
 | `points` | integer | 是 |  |
+| `role` | [UserRole](#userrole) | 是 |  |
+
+### AdminUser
+
+只有管理員 API 會回傳，包含可信度評分。
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `id` | string | 是 |  |
+| `nickname` | string | 是 |  |
+| `points` | integer | 是 |  |
+| `role` | [UserRole](#userrole) | 是 |  |
+| `languages` | [LanguageTag](#languagetag)[] | 是 |  |
+| `nearby_notifications_enabled` | boolean | 是 |  |
+| `nearby_radius_m` | integer | 是 |  |
+| `location_sharing` | [LocationSharing](#locationsharing) | 是 |  |
+| `townpass_user_id` | string | 是 |  |
+| `trust_score` | integer | 是 |  |
+| `banned_at` | string（時間） \| null | 是 |  |
+| `ban_reason` | string \| null | 是 |  |
+| `created_at` | string（時間） | 是 |  |
+
+### AuditEntry
+
+| 欄位 | 型別 | 必填 | 說明 |
+|---|---|---|---|
+| `id` | string | 是 |  |
+| `admin` | [PublicUser](#publicuser) | 是 |  |
+| `action` | string | 是 |  |
+| `target_type` | `question` \| `answer` \| `user` \| `pii_report` | 是 |  |
+| `target_id` | string | 是 |  |
+| `detail` | object | 是 | 刪除時保留原內容，修改時有 before 和 after |
+| `created_at` | string（時間） | 是 |  |
 
 ### Me
 
@@ -966,6 +1408,7 @@ BCP 47 語言標籤
 | `id` | string | 是 |  |
 | `nickname` | string | 是 |  |
 | `points` | integer | 是 |  |
+| `role` | [UserRole](#userrole) | 是 |  |
 | `languages` | [LanguageTag](#languagetag)[] | 是 |  |
 | `nearby_notifications_enabled` | boolean | 是 |  |
 | `nearby_radius_m` | integer | 是 |  |
@@ -978,6 +1421,7 @@ BCP 47 語言標籤
 | `id` | string | 是 |  |
 | `nickname` | string | 是 |  |
 | `points` | integer | 是 |  |
+| `role` | [UserRole](#userrole) | 是 |  |
 | `accepted_answer_count` | integer | 是 |  |
 | `completed_assist_count` | integer | 是 |  |
 | `badges` | [Badge](#badge)[] | 是 |  |
@@ -1009,7 +1453,7 @@ BCP 47 語言標籤
 | 欄位 | 型別 | 必填 | 說明 |
 |---|---|---|---|
 | `id` | string | 是 |  |
-| `kind` | `image` \| `audio` | 是 |  |
+| `kind` | `image` \| `audio` \| `video` | 是 |  |
 | `url` | string（URL） | 是 |  |
 | `width` | integer |  |  |
 | `height` | integer |  |  |
@@ -1045,7 +1489,8 @@ BCP 47 語言標籤
 | `body` | string |  | 最長 5000 字 |
 | `media_ids` | string[] |  | 最多 5 項 |
 | `language` | [LanguageTag](#languagetag) | 是 |  |
-| `category` | [Category](#category) | 是 |  |
+| `tags` | string[] |  | 選填的自訂標籤，和 `category` 並存。每個 1 到 20 字。最多 5 項 |
+| `category` | [Category](#category) |  | 選填。未填時由分類器判斷，信心不足或沒有文字時為 `uncategorized` |
 | `assistance_mode` | [AssistanceMode](#assistancemode) | 是 |  |
 | `context` | [QuestionContext](#questioncontext) \| null |  |  |
 | `location_sharing` | [LocationSharing](#locationsharing) |  | 這個問題的位置分享等級；未填時採用使用者的預設等級 |
@@ -1060,6 +1505,7 @@ BCP 47 語言標籤
 | `status` | [QuestionStatus](#questionstatus) | 是 |  |
 | `title` | string \| null | 是 | 內容待個資確認時為 null |
 | `category` | [Category](#category) | 是 |  |
+| `tags` | string[] | 是 |  |
 | `language` | [LanguageTag](#languagetag) | 是 |  |
 | `assistance_mode` | [AssistanceMode](#assistancemode) | 是 |  |
 | `location_sharing` | [LocationSharing](#locationsharing) | 是 |  |
@@ -1068,6 +1514,7 @@ BCP 47 語言標籤
 | `area` | [PublicArea](#publicarea) \| null |  |  |
 | `thumbnail_url` | string（URL） \| null |  |  |
 | `has_audio` | boolean |  |  |
+| `has_video` | boolean |  |  |
 | `answer_count` | integer | 是 |  |
 | `reward_points` | integer | 是 | 任務板顯示的可得積分 |
 | `can_claim` | boolean | 是 | 目前使用者能否接下現場任務 |
@@ -1082,6 +1529,7 @@ BCP 47 語言標籤
 | `status` | [QuestionStatus](#questionstatus) | 是 |  |
 | `title` | string \| null | 是 | 內容待個資確認時為 null |
 | `category` | [Category](#category) | 是 |  |
+| `tags` | string[] | 是 |  |
 | `language` | [LanguageTag](#languagetag) | 是 |  |
 | `assistance_mode` | [AssistanceMode](#assistancemode) | 是 |  |
 | `location_sharing` | [LocationSharing](#locationsharing) | 是 |  |
@@ -1090,6 +1538,7 @@ BCP 47 語言標籤
 | `area` | [PublicArea](#publicarea) \| null |  |  |
 | `thumbnail_url` | string（URL） \| null |  |  |
 | `has_audio` | boolean |  |  |
+| `has_video` | boolean |  |  |
 | `answer_count` | integer | 是 |  |
 | `reward_points` | integer | 是 | 任務板顯示的可得積分 |
 | `can_claim` | boolean | 是 | 目前使用者能否接下現場任務 |
@@ -1196,7 +1645,7 @@ BCP 47 語言標籤
 | 欄位 | 型別 | 必填 | 說明 |
 |---|---|---|---|
 | `id` | string | 是 |  |
-| `type` | `nearby_question` \| `new_answer` \| `answer_accepted` \| `assist_claimed` \| `assist_arrived` \| `assist_completed` \| `assist_cancelled` \| `pii_report_pending` \| `pii_report_resolved` \| `badge_earned` | 是 |  |
+| `type` | `nearby_question` \| `new_answer` \| `answer_accepted` \| `assist_claimed` \| `assist_arrived` \| `assist_completed` \| `assist_cancelled` \| `pii_report_pending` \| `pii_report_resolved` \| `content_moderated` \| `badge_earned` | 是 |  |
 | `title` | string | 是 |  |
 | `body` | string | 是 |  |
 | `question_id` | string \| null |  |  |

@@ -8,7 +8,7 @@ import {
   useSyncExternalStore,
   type TouchEvent,
 } from "react";
-import { createMockApi } from "./api/mock-api";
+import { createMockApi, META } from "./api/mock-api";
 import { getCurrentLocation } from "./api/location";
 import { connectBackend, getIdentity } from "./api/session";
 import { ForumFeed } from "@/app/ui/forum/forum-feed";
@@ -18,6 +18,7 @@ import {
   type AskerApi,
   type CategoryId,
   type Me,
+  type Meta,
   type QuestionDetail,
   type QuestionSummary,
 } from "./api/types";
@@ -188,8 +189,18 @@ function LineAppInner() {
 
 function LineAppConnected({ api, note }: { api: AskerApi; note: string | null }) {
   const [me, setMe] = useState<Me | null>(null);
+  const [meta, setMeta] = useState<Meta>(META);
   const [questions, setQuestions] = useState<QuestionSummary[]>([]);
   const [forumQuestions, setForumQuestions] = useState<QuestionDetail[]>([]);
+  const [forumBaseQuestions, setForumBaseQuestions] = useState<QuestionDetail[]>([]);
+  const [forumSearch, setForumSearch] = useState("");
+  const [forumLoading, setForumLoading] = useState(false);
+  const [forumLoadingMore, setForumLoadingMore] = useState(false);
+  const [forumCursor, setForumCursor] = useState<string | null>(null);
+  const forumSearchRef = useRef("");
+  const forumRequestRef = useRef(0);
+  const forumLoadingMoreRef = useRef(false);
+  const forumSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [details, setDetails] = useState<Record<string, QuestionDetail>>({});
   const [answers, setAnswers] = useState<Record<string, Answer[]>>({});
   const [loading, setLoading] = useState(true);
@@ -219,14 +230,15 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
     [],
   );
 
-  // 分頁名稱不放在畫面上，改顯示在網頁標題
+  // 分頁與聊天室名稱顯示在網頁標題
+  const pageTitle = active ? (active.id === null ? "新問題" : "討論串") : TAB_TITLE[tab];
   useEffect(() => {
     const previous = document.title;
-    document.title = TAB_TITLE[tab];
+    document.title = pageTitle;
     return () => {
       document.title = previous;
     };
-  }, [tab]);
+  }, [pageTitle]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -266,10 +278,67 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
   }, [api]);
 
   const loadForumQuestions = useCallback(async () => {
-    const list = await api.listForumQuestions();
-    setForumQuestions(list);
-    return list;
+    const requestId = ++forumRequestRef.current;
+    const query = forumSearchRef.current;
+    try {
+      const page = await api.listForumQuestions(query ? { tagQuery: query } : undefined);
+      if (requestId === forumRequestRef.current) {
+        setForumQuestions(page.questions);
+        if (!query) setForumBaseQuestions(page.questions);
+        setForumCursor(page.nextCursor);
+      }
+      return page.questions;
+    } finally {
+      if (requestId === forumRequestRef.current) setForumLoading(false);
+    }
   }, [api]);
+
+  function changeForumSearch(value: string) {
+    setForumSearch(value);
+    forumSearchRef.current = value.trim().replace(/^#/, "").slice(0, 50);
+    ++forumRequestRef.current;
+    setForumQuestions([]);
+    setForumCursor(null);
+    setForumLoading(true);
+    if (forumSearchTimerRef.current) clearTimeout(forumSearchTimerRef.current);
+    forumSearchTimerRef.current = setTimeout(() => {
+      loadForumQuestions().catch((e) => {
+        setForumLoading(false);
+        notify(errorMessage(e), "error");
+      });
+    }, 300);
+  }
+
+  async function loadMoreForumQuestions() {
+    if (!forumCursor || forumLoadingMoreRef.current || forumLoading) return;
+    forumLoadingMoreRef.current = true;
+    setForumLoadingMore(true);
+    const requestId = forumRequestRef.current;
+    const query = forumSearchRef.current;
+    try {
+      const page = await api.listForumQuestions({
+        cursor: forumCursor,
+        ...(query ? { tagQuery: query } : {}),
+      });
+      if (requestId !== forumRequestRef.current) return;
+      const append = (current: QuestionDetail[]) => {
+        const ids = new Set(current.map((question) => question.id));
+        return [...current, ...page.questions.filter((question) => !ids.has(question.id))];
+      };
+      setForumQuestions(append);
+      if (!query) setForumBaseQuestions(append);
+      setForumCursor(page.nextCursor);
+    } catch (e) {
+      notify(errorMessage(e), "error");
+    } finally {
+      forumLoadingMoreRef.current = false;
+      setForumLoadingMore(false);
+    }
+  }
+
+  useEffect(() => () => {
+    if (forumSearchTimerRef.current) clearTimeout(forumSearchTimerRef.current);
+  }, []);
 
   const loadAll = useCallback(async () => {
     const list = await loadSummaries();
@@ -296,10 +365,11 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
     let cancelled = false;
     // 在 then 裡才開始載入：資料回來後才 setState，不是在 effect 本體同步呼叫
     Promise.resolve()
-      .then(() => Promise.all([api.getMe(), loadAll(), loadForumQuestions()]))
-      .then(([m]) => {
+      .then(() => Promise.all([api.getMe(), api.getMeta(), loadAll(), loadForumQuestions()]))
+      .then(([m, metadata]) => {
         if (cancelled) return;
         setMe(m);
+        setMeta(metadata);
       })
       .catch((e) => {
         if (!cancelled) notify(errorMessage(e), "error");
@@ -369,7 +439,7 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           const knownIds = new Set(known.map((a) => a.id));
           const fresh = list.filter((a) => !knownIds.has(a.id) && a.author.id !== currentMe?.id);
           const last = fresh.at(-1);
-          if (last) notify(`${last.author.nickname} 回答了您的問題`);
+          if (last) notify(`${last.author.nickname}${last.author.role === "bot" ? "（機器人）" : ""} 回答了您的問題`);
         } catch {
           // 問題已被撤回（404）等情況：下次載入列表時會修正
         }
@@ -425,7 +495,7 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           category: active.category === "uncategorized" ? undefined : active.category,
           assistance_mode: "online",
           location_sharing: locationSharing,
-          location,
+          ...(locationSharing === "off" ? {} : { location }),
           client_request_id: makeId(),
         });
         setDetails((prev) => ({ ...prev, [q.id]: q }));
@@ -476,7 +546,7 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
         loadSummaries(),
         loadForumQuestions(),
       ]);
-      notify("問題已標記為已解決");
+      notify("問題已標記為已完成");
     } catch (e) {
       notify(errorMessage(e), "error");
     }
@@ -564,9 +634,15 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
         ) : (
           <ForumFeed
             questions={forumQuestions}
+            baseQuestions={forumBaseQuestions}
+            search={forumSearch}
+            onSearchChange={changeForumSearch}
+            onLoadMore={loadMoreForumQuestions}
+            hasMore={forumCursor !== null}
+            loadingMore={forumLoadingMore}
             nickname={me?.nickname ?? "訪客"}
             now={now}
-            loading={loading}
+            loading={loading || forumLoading}
             onAsk={startDraft}
             onOpen={openQuestion}
           />
@@ -582,6 +658,7 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           category={active.category}
           answers={active.id ? (answers[active.id] ?? []) : []}
           now={now}
+          limits={meta.limits}
           sending={sending}
           onBack={() => setActive(null)}
           onSend={send}

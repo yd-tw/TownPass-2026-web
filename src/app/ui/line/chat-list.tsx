@@ -57,7 +57,7 @@ export function ChatList({
         const last = list.at(-1);
         return {
           q: question,
-          body: details[question.id]?.body ?? (question.has_audio ? "（語音提問）" : "（附件提問）"),
+          body: details[question.id]?.body ?? (question.has_audio ? "（語音提問）" : question.has_video ? "（影片提問）" : "（附件提問）"),
           last,
           lastAt: last?.created_at ?? question.created_at,
           members:

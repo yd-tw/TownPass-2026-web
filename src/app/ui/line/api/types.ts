@@ -18,11 +18,13 @@ export type QuestionStatus = "open" | "in_progress" | "resolved";
 export type AssistanceMode = "online" | "onsite" | "either";
 export type AssistStatus = "claimed" | "arrived" | "completed" | "cancelled";
 export type LocationSharing = "off" | "approximate" | "exact";
+export type UserRole = "user" | "admin" | "bot";
 
 export type PublicUser = {
   id: string;
   nickname: string;
   points: number;
+  role: UserRole;
 };
 
 export type Me = PublicUser & {
@@ -53,8 +55,8 @@ export type QuestionSummary = {
   status: QuestionStatus;
   /** 內容待個資確認時為 null */
   title: string | null;
-  /** 前端論壇展示用的標籤；正式 API 對接時由後端提供 */
-  tags?: string[];
+  /** 後端回傳的自訂標籤；分類是獨立欄位 */
+  tags: string[];
   category: CategoryId;
   language: string;
   assistance_mode: AssistanceMode;
@@ -66,6 +68,7 @@ export type QuestionSummary = {
   area: Record<string, unknown> | null;
   thumbnail_url: string | null;
   has_audio?: boolean;
+  has_video?: boolean;
   answer_count: number;
   reward_points: number;
   can_claim: boolean;
@@ -109,6 +112,7 @@ export type CreateQuestionRequest = {
   title?: string;
   body?: string;
   media_ids?: string[];
+  tags?: string[];
   language: string;
   /** 可不傳：後端會自動分類，不確定時為 uncategorized */
   category?: CategoryId;
@@ -136,7 +140,6 @@ export type Meta = {
     image_max_bytes: number;
     audio_max_bytes: number;
     audio_max_seconds: number;
-    /** 後端還沒實作影片；實作後 /meta 預計會帶這兩個值 */
     video_max_bytes?: number;
     video_max_seconds?: number;
   };
@@ -149,6 +152,8 @@ export type Signal =
   | { type: "question.changed"; question_id: string }
   | { type: "answers.changed"; question_id: string };
 
+export type ForumPage = { questions: QuestionDetail[]; nextCursor: string | null };
+
 /** 發問者畫面需要的 API；之後換成真的後端只要實作同一個介面 */
 export type AskerApi = {
   getMeta(): Promise<Meta>;
@@ -156,8 +161,8 @@ export type AskerApi = {
   updateMe(patch: { nickname?: string }): Promise<Me>;
   /** GET /questions?author=me */
   listMyQuestions(): Promise<QuestionSummary[]>;
-  /** 公開討論串列表；目前只由 mock 資料提供 */
-  listForumQuestions(filter?: { category?: CategoryId }): Promise<QuestionDetail[]>;
+  /** 公開討論串列表；tagQuery 會交由後端搜尋所有標籤 */
+  listForumQuestions(filter?: { category?: CategoryId; tagQuery?: string; cursor?: string }): Promise<ForumPage>;
   /**
    * 志工分類：PUT /questions/{id}/category。
    * 只能改未分類的問題（已分類回 409 INVALID_STATE）；不能送 uncategorized（400）。
