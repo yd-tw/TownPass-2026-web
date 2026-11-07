@@ -116,7 +116,7 @@ export type ReportDraft = {
   image: string | null;
   context: {
     /**
-     * 截圖時所在畫面，例如 `/account`、`/#home`（首頁分頁）、`web:tp2026.ydtw.net/new?question=1`、
+     * 截圖時所在畫面，例如 `/account`、`/main/home`（首頁分頁）、`web:tp2026.ydtw.net/new?question=1`、
      * 結尾 `+dialog` / `+sheet` 表示開著對話框或底部彈窗。舊版 App 沒有這個欄位。
      */
     screen?: string;

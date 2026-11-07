@@ -212,7 +212,7 @@ export default function NewPostForm() {
 
         {draft && (
           <details className="rounded-2xl border border-tp-gray-100 bg-white px-4 py-3">
-            <summary className="cursor-pointer text-[15px] text-tp-gray-700">裝置資訊（會一併送出）</summary>
+            <summary className="cursor-pointer text-[15px] text-tp-gray-700">裝置資訊（會一併送出，只有你和管理員看得到）</summary>
             <pre className="mt-2 overflow-auto rounded-xl bg-tp-gray-50 p-2 text-[12px] whitespace-pre-wrap text-tp-gray-700">
               {JSON.stringify(draft.context, null, 2)}
             </pre>
