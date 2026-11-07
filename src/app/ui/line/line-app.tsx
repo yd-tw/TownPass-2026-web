@@ -322,6 +322,7 @@ function LineAppConnected({
   const [now, setNow] = useState(() => Date.now());
   const pathname = usePathname();
   const tab: Tab = pathname === "/forum" ? "forum" : "chats";
+  const isAppForumTab = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("appTab") === "forum";
   const [active, setActive] = useState<Active | null>(() => {
     // 問題回報：截圖已在 LineAppInner 讀好，聊天室第一次出現就帶著
     if (report) {
@@ -617,6 +618,17 @@ function LineAppConnected({
     Promise.all([loadQuestion(id), loadAnswers(id)]).catch((e) => notify(errorMessage(e), "error"));
   }
 
+  function openForumQuestion(id: string) {
+    // 示範資料只存在目前的頁面記憶體，新 WebView 無法讀取同一份資料。
+    if (isAppForumTab && isInTownPass() && !new URLSearchParams(window.location.search).get("demo")) {
+      const url = new URL("/forum", window.location.origin);
+      url.searchParams.set("question", id);
+      postToApp("open_link", url.toString());
+      return;
+    }
+    openQuestion(id);
+  }
+
   function startDraft() {
     setActive({ key: makeId(), id: null, locationSharing: "approximate" });
   }
@@ -752,8 +764,6 @@ function LineAppConnected({
 
   const meId = me?.id ?? "";
   const activeQuestion = active?.id ? details[active.id] ?? forumQuestions.find((q) => q.id === active.id) : null;
-  const isAppForumTab = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("appTab") === "forum";
-
   function switchTab(next: Tab) {
     if (next === tab && (pathname === "/chat" || pathname === "/forum")) return;
     const params = new URLSearchParams(window.location.search);
@@ -818,7 +828,7 @@ function LineAppConnected({
             now={now}
             loading={loading || forumLoading}
             onAsk={startDraft}
-            onOpen={openQuestion}
+            onOpen={openForumQuestion}
           />
         )}
       </div>
