@@ -116,6 +116,9 @@ type Item =
   | { type: "post"; key: string; post: Post; first: boolean };
 
 type Confirm = { kind: "withdraw" | "resolve" };
+/** 輸入列按鈕：比一般 IconButton 小一號，五個按鈕擠得下 */
+const INPUT_BUTTON = "size-11 max-[300px]:size-10";
+
 export type PendingMedia = { id: string; kind: "image" | "video"; file: File; duration?: number };
 
 export function ChatRoom(props: ChatRoomProps) {
@@ -140,6 +143,11 @@ export function ChatRoom(props: ChatRoomProps) {
   const [votingIds, setVotingIds] = useState<Set<string>>(() => new Set());
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  /** 待傳圖片的放大預覽（blob: 網址，關閉時釋放） */
+  const [preview, setPreview] = useState<string | null>(null);
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview);
+  }, [preview]);
   const [showJump, setShowJump] = useState(false);
   const [draftOptionsOpen, setDraftOptionsOpen] = useState(false);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
@@ -232,6 +240,7 @@ export function ChatRoom(props: ChatRoomProps) {
   useBackLayer(menu !== null, () => setMenu(null));
   useBackLayer(confirm !== null, () => setConfirm(null));
   useBackLayer(lightbox !== null, () => setLightbox(null));
+  useBackLayer(preview !== null, () => setPreview(null));
 
   // ---- 捲動 ----
   useLayoutEffect(() => {
@@ -399,7 +408,7 @@ export function ChatRoom(props: ChatRoomProps) {
       onTouchEnd={(event) => {
         const start = swipeStart.current;
         swipeStart.current = null;
-        if (!start || drawerOpen || recording || menu || confirm || lightbox) return;
+        if (!start || drawerOpen || recording || menu || confirm || lightbox || preview) return;
         const dx = event.changedTouches[0].clientX - start.x;
         const dy = event.changedTouches[0].clientY - start.y;
         if (dx < -85 && Math.abs(dx) > Math.abs(dy) * 1.4) props.onBack();
@@ -555,8 +564,23 @@ export function ChatRoom(props: ChatRoomProps) {
             <div className="flex max-h-28 gap-2 overflow-x-auto px-2 pb-2" aria-label="待傳附件">
               {pendingMedia.map((item) => (
                 <div key={item.id} className="flex max-w-40 shrink-0 items-center gap-1.5 rounded-xl bg-tp-gray-100 px-2 py-1.5 text-[13px] text-tp-gray-900">
-                  <PendingMediaThumbnail item={item} />
-                  <span className="min-w-0 truncate" title={item.file.name}>{item.file.name}</span>
+                  {item.kind === "image" ? (
+                    // 點縮圖或檔名放大預覽，送出前可以確認截圖內容
+                    <button
+                      type="button"
+                      aria-label={`預覽 ${item.file.name}`}
+                      onClick={() => setPreview(URL.createObjectURL(item.file))}
+                      className="flex min-w-0 items-center gap-1.5 rounded-md text-left"
+                    >
+                      <PendingMediaThumbnail item={item} />
+                      <span className="min-w-0 truncate" title={item.file.name}>{item.file.name}</span>
+                    </button>
+                  ) : (
+                    <>
+                      <PendingMediaThumbnail item={item} />
+                      <span className="min-w-0 truncate" title={item.file.name}>{item.file.name}</span>
+                    </>
+                  )}
                   <button
                     type="button"
                     aria-label={`移除 ${item.file.name}`}
@@ -594,19 +618,19 @@ export function ChatRoom(props: ChatRoomProps) {
             </div>
           )}
           <div className="flex min-w-0 items-end gap-0.5">
-          {!question && <IconButton label="發問額外選項" onClick={() => { setAttachmentMenuOpen(false); setDraftOptionsOpen((open) => !open); }} className="max-[300px]:size-10"><MoreHorizontal className="size-6" /></IconButton>}
-          {question && <IconButton label="問題選單" onClick={() => { setAttachmentMenuOpen(false); setDrawerOpen(true); }} className="max-[300px]:size-10"><Menu className="size-6" /></IconButton>}
-          <IconButton label="新增附件" disabled={sending || checkingVideo} onClick={() => { setDraftOptionsOpen(false); setAttachmentMenuOpen((open) => !open); }} className="max-[300px]:size-10"><Plus className="size-7" /></IconButton>
-          <div className="mx-1 flex min-h-12 min-w-0 flex-1 items-end rounded-[24px] bg-tp-gray-100/70 px-4 max-[300px]:px-2">
+          {!question && <IconButton label="發問額外選項" onClick={() => { setAttachmentMenuOpen(false); setDraftOptionsOpen((open) => !open); }} className={INPUT_BUTTON}><MoreHorizontal className="size-5" /></IconButton>}
+          {question && <IconButton label="問題選單" onClick={() => { setAttachmentMenuOpen(false); setDrawerOpen(true); }} className={INPUT_BUTTON}><Menu className="size-5" /></IconButton>}
+          <IconButton label="新增附件" disabled={sending || checkingVideo} onClick={() => { setDraftOptionsOpen(false); setAttachmentMenuOpen((open) => !open); }} className={INPUT_BUTTON}><Plus className="size-6" /></IconButton>
+          <div className="mx-1 flex min-h-11 min-w-0 flex-1 items-end rounded-[22px] bg-tp-gray-100/70 px-4 max-[300px]:px-2">
             <textarea
               rows={1}
               value={text}
               maxLength={limits.question_body_max_chars}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={question ? "補充說明…" : "請輸入您的問題…"}
+              placeholder={question ? "補充說明…" : "請輸入問題…"}
               aria-label={question ? "補充說明" : "輸入問題"}
-              className="field-sizing-content max-h-36 min-h-12 min-w-0 flex-1 resize-none bg-transparent py-3 text-[15px] leading-6 outline-none placeholder:text-tp-gray-600"
+              className="field-sizing-content max-h-36 min-h-11 min-w-0 flex-1 resize-none bg-transparent py-2.5 text-[15px] leading-6 outline-none placeholder:text-tp-gray-600"
             />
           </div>
           {/* 沒打字時都可以錄音，包含已經有待傳附件的時候 */}
@@ -615,22 +639,22 @@ export function ChatRoom(props: ChatRoomProps) {
               label="錄音"
               disabled={sending || checkingVideo || pendingMedia.length >= limits.media_per_post_max}
               onClick={() => setRecording(true)}
-              className="max-[300px]:size-10"
+              className={INPUT_BUTTON}
             >
-              <Mic className="size-7" />
+              <Mic className="size-6" />
             </IconButton>
           )}
           {(text.trim() || pendingMedia.length > 0) && (
             <IconButton
               label="傳送"
-              className="text-tp-primary-500 max-[300px]:size-10"
+              className={`${INPUT_BUTTON} text-tp-primary-500`}
               disabled={sending || checkingVideo}
               onClick={() => sendText()}
             >
               {sending || checkingVideo ? (
-                <LoaderCircle className="size-7 animate-spin" />
+                <LoaderCircle className="size-6 animate-spin" />
               ) : (
-                <SendHorizontal className="size-7" />
+                <SendHorizontal className="size-6" />
               )}
             </IconButton>
           )}
@@ -705,6 +729,7 @@ export function ChatRoom(props: ChatRoomProps) {
       )}
 
       {lightbox && <Lightbox url={lightbox} onClose={() => setLightbox(null)} />}
+      {preview && <Lightbox url={preview} onClose={() => setPreview(null)} />}
     </div>
   );
 }
