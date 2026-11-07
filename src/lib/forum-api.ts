@@ -41,7 +41,7 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
     const err = json?.error;
     throw new ApiError(res.status, err?.code ?? "UNKNOWN", err?.message ?? `HTTP ${res.status}`);
   }
-  return json.data as T;
+  return json?.data as T; // 204 沒有內容時為 undefined
 }
 
 function readToken(): string | null {
@@ -101,6 +101,14 @@ export type CreateQuestion = {
   location_sharing?: "off" | "approximate" | "exact";
   client_request_id: string;
 };
+
+/** 註冊此裝置的 FCM token（綁定到目前登入的使用者），成功回 204 */
+export async function registerPushToken(token: string, pushToken: string, platform: "android" | "ios"): Promise<void> {
+  await request(`/push-tokens/${encodeURIComponent(pushToken)}`, {
+    method: "PUT",
+    body: JSON.stringify({ platform }),
+  }, token);
+}
 
 export async function createQuestion(token: string, q: CreateQuestion): Promise<{ id: string }> {
   return request("/questions", { method: "POST", body: JSON.stringify(q) }, token);

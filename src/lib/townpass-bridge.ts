@@ -107,6 +107,8 @@ export type UserInfo = {
   cityInternetUid: string;
 };
 
+export type PushToken = { token: string; platform: "android" | "ios" };
+
 export type ReportDraft = {
   id: string;
   description: string;
