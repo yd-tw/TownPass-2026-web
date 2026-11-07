@@ -11,9 +11,11 @@ import {
   clearToken,
   createQuestion,
   getToken,
+  uploadAudio,
   uploadImage,
   type Category,
 } from "@/lib/forum-api";
+import VoiceRecorder, { type VoiceClip } from "./voice-recorder";
 
 const inputClass =
   "w-full rounded-2xl border border-tp-gray-100 bg-white px-4 py-3 text-[17px] text-tp-gray-900 outline-none placeholder:text-tp-gray-400 focus:border-tp-primary-500";
@@ -27,6 +29,7 @@ export default function NewPostForm() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [image, setImage] = useState<string | null>(null); // data URL
+  const [audio, setAudio] = useState<VoiceClip | null>(null);
   const [draft, setDraft] = useState<ReportDraft | null>(null);
   const [loadingDraft, setLoadingDraft] = useState(isAppReport);
   const [submitting, setSubmitting] = useState(false);
@@ -70,6 +73,10 @@ export default function NewPostForm() {
         if (image) {
           const blob = await (await fetch(image)).blob(); // data URL → Blob
           const media = await uploadImage(token, blob, `report-${draft?.id ?? Date.now()}.png`);
+          media_ids.push(media.id);
+        }
+        if (audio) {
+          const media = await uploadAudio(token, audio.blob, audio.seconds);
           media_ids.push(media.id);
         }
         fallbackRequestId.current ??= crypto.randomUUID();
@@ -173,7 +180,7 @@ export default function NewPostForm() {
           rows={6}
           placeholder="內容"
           maxLength={5000}
-          required={!image}
+          required={!image && !audio}
           className={cn(inputClass, "resize-none")}
         />
 
@@ -191,6 +198,8 @@ export default function NewPostForm() {
             </button>
           </figure>
         )}
+
+        <VoiceRecorder value={audio} onChange={setAudio} disabled={submitting} />
 
         {draft && (
           <details className="rounded-2xl border border-tp-gray-100 bg-white px-4 py-3">

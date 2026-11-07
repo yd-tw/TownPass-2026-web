@@ -84,6 +84,24 @@ export async function uploadImage(token: string, blob: Blob, filename: string): 
   return request("/media", { method: "POST", body: form }, token);
 }
 
+/** 錄音的 MIME 可能帶 codecs 參數，後端只看檔案類型與副檔名 */
+function audioFile(blob: Blob): File {
+  const base = blob.type.split(";")[0];
+  if (base === "audio/mp4" || base === "audio/x-m4a") return new File([blob], "voice.m4a", { type: "audio/mp4" });
+  if (base === "audio/aac") return new File([blob], "voice.aac", { type: "audio/aac" });
+  if (base === "audio/mpeg") return new File([blob], "voice.mp3", { type: "audio/mpeg" });
+  return new File([blob], "voice.webm", { type: "audio/webm" });
+}
+
+export async function uploadAudio(token: string, blob: Blob, durationSeconds: number): Promise<{ id: string }> {
+  // 文字欄位放在檔案前面：有些 multipart 解析器處理檔案時只看得到前面的欄位
+  const form = new FormData();
+  form.append("kind", "audio");
+  form.append("duration_seconds", String(Math.round(durationSeconds)));
+  form.append("file", audioFile(blob));
+  return request("/media", { method: "POST", body: form }, token);
+}
+
 export type CreateQuestion = {
   title?: string;
   body?: string;
