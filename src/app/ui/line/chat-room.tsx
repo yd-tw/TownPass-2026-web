@@ -91,6 +91,10 @@ export type ChatRoomProps = {
   notify: Notify;
   locationSharing: "off" | "approximate";
   onLocationSharingChange: (value: "off" | "approximate") => void;
+  /** 新問題預先放好的待傳附件（App 問題回報的截圖） */
+  initialMedia?: PendingMedia[];
+  /** 新問題上方的提示，取代預設文字 */
+  draftHint?: string;
 };
 
 /** 問題本文或一則回答 */
@@ -112,7 +116,7 @@ type Item =
   | { type: "post"; key: string; post: Post; first: boolean };
 
 type Confirm = { kind: "withdraw" | "resolve" };
-type PendingMedia = { id: string; kind: "image" | "video"; file: File; duration?: number };
+export type PendingMedia = { id: string; kind: "image" | "video"; file: File; duration?: number };
 
 export function ChatRoom(props: ChatRoomProps) {
   const { question, answers, meId, now, sending, notify } = props;
@@ -126,7 +130,7 @@ export function ChatRoom(props: ChatRoomProps) {
   const recordVideoRef = useRef<HTMLInputElement>(null);
 
   const [text, setText] = useState("");
-  const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
+  const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>(() => props.initialMedia ?? []);
   const [checkingVideo, setCheckingVideo] = useState(false);
   const [recording, setRecording] = useState(false);
   const [menu, setMenu] = useState<{ post: Post; top: number } | null>(null);
@@ -189,7 +193,7 @@ export function ChatRoom(props: ChatRoomProps) {
       out.push({
         type: "note",
         key: "draft-note",
-        text: "請說說您想問什麼\n可以打字、拍照，或按麥克風錄音",
+        text: props.draftHint ?? "請說說您想問什麼\n可以打字、拍照，或按麥克風錄音",
       });
     }
     let prev: Post | undefined;
@@ -219,7 +223,7 @@ export function ChatRoom(props: ChatRoomProps) {
       prev = p;
     }
     return out;
-  }, [posts, question, label, now, props.category]);
+  }, [posts, question, label, now, props.category, props.draftHint]);
 
   // ---- 手機返回鍵：由上往下一層一層關 ----
   useBackLayer(true, props.onBack);

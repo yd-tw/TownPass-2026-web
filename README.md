@@ -9,7 +9,7 @@ npm ci
 npm run dev
 ```
 
-開啟 `http://localhost:3000`。App 可使用 `/?mode=ask` 直接開啟提問畫面；使用 `/?demo=mock` 可在不連後端時檢查示範資料。
+開啟 `http://localhost:3000`。`/new`（或 `/?mode=ask`）直接開啟「我要發問」的新問題聊天室，App 的問題回報會開啟 `/new?source=app-report` 並帶入截圖；使用 `/?demo=mock` 可在不連後端時檢查示範資料。
 
 ## 目前功能
 

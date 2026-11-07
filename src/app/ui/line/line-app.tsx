@@ -22,10 +22,11 @@ import {
   type QuestionDetail,
   type QuestionSummary,
 } from "./api/types";
-import { ChatRoom } from "./chat-room";
+import { ChatRoom, type PendingMedia } from "./chat-room";
 import { ChatList, type ChatListActions } from "./chat-list";
 import { BottomNav, HomeTab } from "./other-tabs";
 import type { Notify, Outgoing, Tab } from "./types";
+import { callApp, isInTownPass, type ReportDraft } from "@/lib/townpass-bridge";
 
 const NICK_KEY = "line-demo-nickname";
 
@@ -38,7 +39,10 @@ const noopSubscribe = () => () => {};
  */
 const TAB_TITLE: Record<Tab, string> = { home: "主頁", chats: "聊天", forum: "討論串" };
 
-export default function LineApp() {
+/**
+ * @param ask 一開啟就進入新問題聊天室（/new「我要發問」）
+ */
+export default function LineApp({ ask = false }: { ask?: boolean }) {
   const mounted = useSyncExternalStore(
     noopSubscribe,
     () => true,
@@ -47,7 +51,7 @@ export default function LineApp() {
   return (
     <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-tp-gray-50 sm:h-[min(860px,calc(100dvh-2rem))] sm:w-[400px] sm:rounded-[2.25rem] sm:shadow-2xl sm:ring-1 sm:ring-black/10">
       {mounted ? (
-        <LineAppInner />
+        <LineAppInner ask={ask} />
       ) : (
         <div className="flex flex-1 items-center justify-center">
           <span className="size-8 animate-spin rounded-full border-3 border-tp-primary-500 border-t-transparent" />
@@ -101,7 +105,40 @@ type Active = {
   id: string | null;
   category: CategoryId;
   locationSharing: "off" | "approximate";
+  /** 從 App 問題回報開啟的新問題：送出時附上裝置資訊 */
+  report?: { id: string; context: ReportDraft["context"]; media: PendingMedia[] };
 };
+
+/** App 問題回報的提示：截圖已放進待傳附件 */
+const REPORT_HINT = "已附上剛才的 App 畫面截圖，個資已自動遮蔽，送出前請再確認\n請說說遇到什麼問題，可以打字或按麥克風錄音";
+
+/** 問題回報的 context：裝置資訊放 extra，只有發問者本人與管理員看得到 */
+function reportContext(report: NonNullable<Active["report"]>) {
+  return {
+    service_id: "townpass-app",
+    service_name: "Town Pass",
+    // page_route 不可含 query；完整的 screen 仍會隨 extra 送出
+    page_route: (report.context.screen ?? report.context.route).replace(/\?[^+]*/, ""),
+    page_title: report.context.screenTitle?.slice(0, 80) || undefined,
+    extra: { reportId: report.id, ...report.context },
+  };
+}
+
+/** 讀取 App 的問題回報草稿，截圖轉成待傳附件；沒有草稿時回傳 null */
+async function readReportDraft(): Promise<Active["report"] | null> {
+  const draft = await callApp<ReportDraft | null>("report_draft");
+  if (!draft) return null; // 已讀過、逾時（10 分鐘）或網域不符
+  const media: PendingMedia[] = [];
+  if (draft.image) {
+    try {
+      const blob = await (await fetch(draft.image)).blob(); // data URL → Blob
+      media.push({ id: makeId(), kind: "image", file: new File([blob], `report-${draft.id}.png`, { type: "image/png" }) });
+    } catch {
+      // 截圖轉檔失敗仍保留裝置資訊
+    }
+  }
+  return { id: draft.id, context: draft.context, media };
+}
 
 type Connection =
   | { status: "connecting" }
@@ -113,7 +150,7 @@ type Connection =
  * - 網址加上 ?demo=mock 用示範資料；?demo=crowd 模擬發問後有 50～100 位志工回答
  * - 在城市通 App 內用 userinfo.id 登入；一般瀏覽器用這台瀏覽器的測試帳號
  */
-function LineAppInner() {
+function LineAppInner({ ask }: { ask: boolean }) {
   const [attempt, setAttempt] = useState(0);
   const [conn, setConn] = useState<Connection>({ status: "connecting" });
 
@@ -155,7 +192,7 @@ function LineAppInner() {
   }, [attempt]);
 
   if (conn.status === "ready") {
-    return <LineAppConnected key={attempt} api={conn.api} note={conn.note} />;
+    return <LineAppConnected key={attempt} api={conn.api} note={conn.note} ask={ask} />;
   }
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
@@ -187,7 +224,7 @@ function LineAppInner() {
   );
 }
 
-function LineAppConnected({ api, note }: { api: AskerApi; note: string | null }) {
+function LineAppConnected({ api, note, ask }: { api: AskerApi; note: string | null; ask: boolean }) {
   const [me, setMe] = useState<Me | null>(null);
   const [meta, setMeta] = useState<Meta>(META);
   const [questions, setQuestions] = useState<QuestionSummary[]>([]);
@@ -207,8 +244,8 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
   const [now, setNow] = useState(() => Date.now());
   const [tab, setTab] = useState<Tab>("home");
   const [active, setActive] = useState<Active | null>(() =>
-    new URLSearchParams(window.location.search).get("mode") === "ask"
-      ? { key: makeId(), id: null, category: "uncategorized", locationSharing: "approximate" }
+    ask || new URLSearchParams(window.location.search).get("mode") === "ask"
+      ?{ key: makeId(), id: null, category: "uncategorized", locationSharing: "approximate" }
       : null,
   );
   const touchStart = useRef<{ x: number; y: number } | null>(null);
@@ -410,6 +447,32 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
       .catch((e) => notify(errorMessage(e), "error"));
   }, [loading, loadQuestion, loadAnswers, notify]);
 
+  // App 問題回報開啟 /new?source=app-report：讀一次草稿，截圖放進新問題的待傳附件。
+  // 草稿只能讀一次，Strict Mode 下 effect 會跑兩次，用 ref 防止第二次讀到 null。
+  const reportRequested = useRef(false);
+  useEffect(() => {
+    if (reportRequested.current) return;
+    reportRequested.current = true;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("source") !== "app-report") return;
+    // 移除參數，重新整理時才不會再讀一次
+    url.searchParams.delete("source");
+    window.history.replaceState(window.history.state, "", url);
+    if (!isInTownPass()) return;
+
+    readReportDraft()
+      .then((report) => {
+        if (!report) return;
+        // 換新的 key 讓聊天室重新掛載，帶入截圖；問題回報不通知附近的人
+        setActive((current) =>
+          current?.id
+            ? current
+            : { key: makeId(), id: null, category: "app_usage", locationSharing: "off", report },
+        );
+      })
+      .catch(() => notify("沒有讀到 App 的截圖，請直接描述遇到的問題", "error"));
+  }, [notify]);
+
   // 只訂閱自己的問題和正在看的問題（question:subscribe）
   const activeId = active?.id ?? null;
   useEffect(() => {
@@ -496,11 +559,13 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           assistance_mode: "online",
           location_sharing: locationSharing,
           ...(locationSharing === "off" ? {} : { location }),
-          client_request_id: makeId(),
+          ...(active.report ? { context: reportContext(active.report) } : {}),
+          // 問題回報用草稿 ID 防重送
+          client_request_id: active.report?.id ?? makeId(),
         });
         setDetails((prev) => ({ ...prev, [q.id]: q }));
         setAnswers((prev) => ({ ...prev, [q.id]: [] }));
-        setActive((a) => (a ? { ...a, id: q.id, category: q.category } : a));
+        setActive((a) => (a ? { ...a, id: q.id, category: q.category, report: undefined } : a));
         await loadSummaries();
         await loadForumQuestions();
         notify("問題已送出，有人回答時會通知您");
@@ -670,6 +735,8 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           onDeleteAnswer={deleteAnswer}
           onWithdraw={() => (active.id ? withdraw(active.id) : Promise.resolve())}
           notify={notify}
+          initialMedia={active.report?.media}
+          draftHint={active.report ? REPORT_HINT : undefined}
         />
       )}
 

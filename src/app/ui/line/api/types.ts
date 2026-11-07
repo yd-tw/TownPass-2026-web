@@ -120,6 +120,14 @@ export type CreateQuestionRequest = {
   location_sharing?: LocationSharing;
   /** location_sharing 不是 off 時必填 */
   location?: Coordinates | null;
+  /** 發問時所在的服務與畫面（App 問題回報會帶） */
+  context?: {
+    service_id: string;
+    service_name: string;
+    page_route?: string;
+    page_title?: string;
+    extra?: Record<string, unknown>;
+  } | null;
   client_request_id: string;
 };
 

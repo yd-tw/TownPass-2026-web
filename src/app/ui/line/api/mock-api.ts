@@ -583,7 +583,7 @@ export function createMockApi(
         assistance_mode: req.assistance_mode,
         location_sharing: req.location_sharing ?? me.location_sharing,
         author: meUser(),
-        context: null,
+        context: req.context ?? null,
         area: null,
         thumbnail_url: media.find((m) => m.kind === "image")?.url ?? null,
         has_audio: media.some((m) => m.kind === "audio"),
