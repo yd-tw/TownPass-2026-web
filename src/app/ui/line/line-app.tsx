@@ -606,7 +606,6 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           <ForumFeed
             questions={forumQuestions}
             nickname={me?.nickname ?? "訪客"}
-            meId={meId}
             now={now}
             loading={loading}
             onAsk={startDraft}

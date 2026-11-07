@@ -15,7 +15,6 @@ function timeAgo(value: string, now: number) {
 export function ForumFeed({
   questions,
   nickname,
-  meId,
   now,
   loading,
   onAsk,
@@ -23,7 +22,6 @@ export function ForumFeed({
 }: {
   questions: QuestionDetail[];
   nickname: string;
-  meId: string;
   now: number;
   loading: boolean;
   onAsk: () => void;
@@ -33,7 +31,7 @@ export function ForumFeed({
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
   const visible = questions.filter((question) =>
-    !query || [question.body ?? "", question.author.id, ...(question.tags ?? [])].join(" ").toLowerCase().includes(query),
+    !query || [question.body ?? "", ...(question.tags ?? [])].join(" ").toLowerCase().includes(query),
   );
 
   function closeSearch() {
@@ -76,10 +74,9 @@ export function ForumFeed({
         <button
           type="button"
           onClick={onAsk}
-          className="w-full border-b border-claude-sand/80 px-4 py-4 text-left hover:bg-claude-sand/35"
+          className="w-full px-4 py-3 text-left hover:bg-claude-sand/35"
         >
-          <span className="flex items-center gap-2.5"><Avatar name={nickname} size={36} /><strong className="text-[13px] text-claude-ink">@{meId || "townpass"}</strong></span>
-          <span className="mt-3 block text-[15px] text-stone-500">有什麼問題？</span>
+          <span className="flex items-center gap-2.5"><Avatar name={nickname} size={40} /><span className="text-[15px] text-stone-500">有什麼問題？</span></span>
         </button>
 
         {loading && <p className="py-12 text-center text-[15px] text-stone-500">載入討論中…</p>}
@@ -89,23 +86,19 @@ export function ForumFeed({
             type="button"
             key={question.id}
             onClick={() => onOpen(question.id)}
-            className="block w-full border-b border-claude-sand/80 px-4 py-4 text-left transition-colors hover:bg-claude-sand/35 active:bg-claude-sand/55"
+            className="block w-full px-4 py-3 text-left transition-colors hover:bg-claude-sand/35 active:bg-claude-sand/55"
           >
-            <span className="flex flex-wrap items-center gap-2.5">
-              <Avatar name={question.author.nickname} size={36} />
-              <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 text-[12px]">
-                <strong className="font-bold text-claude-ink">@{question.author.id}</strong>
-                {question.author.points >= 10 && <span title="暖心回答者" className="text-[12px] text-claude-dark">✦</span>}
-                <span className="text-[12px] text-stone-500">· {timeAgo(question.created_at, now)}</span>
+            <span className="flex gap-2.5">
+              <Avatar name={question.author.nickname} size={40} />
+              <span className="flex flex-col">
+                <span className="block line-clamp-3 text-[15px] leading-relaxed whitespace-pre-wrap text-stone-800">{question.body ?? "內容待確認"}</span>
+                <span className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-stone-500">
+                  <span className="flex items-center gap-1" aria-label={`${question.answer_count} 則留言`}><MessageCircle className="size-4" />{question.answer_count}</span>
+                  {question.location_sharing !== "off" && <span aria-label="已開啟附近通知" title="已開啟附近通知"><MapPin className="size-4" /></span>}
+                  <time dateTime={question.created_at} className="whitespace-nowrap">{timeAgo(question.created_at, now)}</time>
+                  {(question.tags ?? []).slice(0, 2).map((tag) => <span key={tag} className="rounded-md bg-claude/10 px-1.5 py-1 font-semibold text-claude-dark">#{tag.replace(/^#/, "")}</span>)}
+                </span>
               </span>
-              <span className="flex max-w-[43%] shrink-0 flex-wrap justify-end gap-1 max-[300px]:ml-11 max-[300px]:max-w-[calc(100%-2.75rem)] max-[300px]:justify-start">
-                {(question.tags ?? []).slice(0, 2).map((tag) => <span key={tag} className="rounded-md bg-claude/10 px-1.5 py-1 text-[12px] font-semibold text-claude-dark">#{tag.replace(/^#/, "")}</span>)}
-              </span>
-            </span>
-            <span className="mt-3 block line-clamp-3 text-[15px] leading-relaxed whitespace-pre-wrap text-stone-800">{question.body ?? "內容待確認"}</span>
-            <span className="mt-3 flex items-center gap-4 text-[12px] text-stone-500">
-              <span className="flex items-center gap-1" aria-label={`${question.answer_count} 則留言`}><MessageCircle className="size-4" />{question.answer_count}</span>
-              {question.location_sharing !== "off" && <span aria-label="已開啟附近通知" title="已開啟附近通知"><MapPin className="size-4" /></span>}
             </span>
           </button>
         ))}
