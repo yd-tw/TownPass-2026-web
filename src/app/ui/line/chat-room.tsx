@@ -3,33 +3,20 @@
 import {
   Bell,
   BellOff,
-  Calendar,
   Camera,
-  ChartBar,
+  Check,
   ChevronDown,
   ChevronLeft,
-  ChevronRight,
-  ChevronUp,
-  CircleAlert,
-  Contact,
+  CircleCheckBig,
   Copy,
-  File,
   Image as ImageIcon,
-  Images,
-  Link,
-  MapPin,
+  LoaderCircle,
   Menu,
   Mic,
-  NotebookPen,
-  Phone,
-  Plus,
-  Reply,
-  Search,
+  Pin,
   SendHorizontal,
-  Smile,
+  ChevronRight,
   Trash2,
-  Undo2,
-  UserPlus,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -39,121 +26,185 @@ import {
   useMemo,
   useRef,
   useState,
+  type ChangeEvent,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
 import { cn } from "@/lib/utils";
-import { Avatar } from "./avatar";
+import { META } from "./api/mock-api";
+import type { Answer, CategoryId, Media, QuestionDetail } from "./api/types";
+import { Avatar, QuestionAvatar } from "./avatar";
+import { categoryLabel } from "./categories";
 import { IconButton } from "./chat-list";
-import { formatClock, formatDateDivider, isSameDay, summarize } from "./format";
-import { STICKERS } from "./sample-data";
-import type { Message, ReplyRef, Room, Status } from "./types";
+import { formatClock, formatDateDivider, isSameDay } from "./format";
+import { AudioBubble, ImageBubble, Lightbox, VoiceRecorder } from "./media";
+import type { Notify, Outgoing, QuestionPrefs } from "./types";
+import { useBackLayer } from "./use-back-layer";
 import { useLongPress } from "./use-long-press";
 
 const CHAT_BG = "#f0eee6";
-const SELF_BUBBLE = "#d97757";
-const MAX_LENGTH = 500;
+/** 自己的泡泡：淺橘底配深色字（像 LINE 的淺綠底黑字），對比約 11:1 */
+const SELF_BUBBLE = "var(--color-claude-peach)";
 const GROUP_GAP = 5 * 60 * 1000;
-const UNSEND_LIMIT = 24 * 60 * 60 * 1000;
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 export type ChatRoomProps = {
-  room: Room;
-  messages: Message[];
+  meId: string;
+  /** null 表示還沒送出的新問題 */
+  question: QuestionDetail | null;
+  category: CategoryId;
+  answers: Answer[];
+  prefs: QuestionPrefs | null;
   now: number;
-  status: Status;
-  nickname: string;
+  sending: boolean;
   unreadElsewhere: number;
   unreadMarkerKey: string | null;
   onBack: () => void;
-  onSend: (kind: "text" | "sticker", text: string, replyTo?: ReplyRef) => void;
-  onRetry: (key: string) => void;
-  onUnsend: (key: string) => void;
-  onDelete: (key: string) => void;
+  onSend: (out: Outgoing) => Promise<boolean>;
+  /** 「問題解決了」：採納幫到忙的那個回答 */
+  onAccept: (answer: Answer) => Promise<void>;
+  onDeleteAnswer: (answer: Answer) => void;
+  onWithdraw: () => Promise<void>;
   onToggleMute: () => void;
-  onHide: () => void;
-  notify: (text: string) => void;
+  onTogglePin: () => void;
+  notify: Notify;
+};
+
+/** 問題本文或一則回答 */
+type Post = {
+  key: string;
+  answer: Answer | null;
+  self: boolean;
+  authorName: string;
+  at: number;
+  body: string | null;
+  media: Media[];
+  hiddenBody: boolean;
 };
 
 type Item =
   | { type: "date"; key: string; label: string }
+  | { type: "note"; key: string; text: string }
   | { type: "unread"; key: string }
-  | { type: "msg"; key: string; m: Message; first: boolean };
+  | { type: "post"; key: string; post: Post; first: boolean };
+
+type Confirm =
+  | { kind: "accept"; answer: Answer }
+  | { kind: "withdraw" };
 
 export function ChatRoom(props: ChatRoomProps) {
-  const { room, messages, now, status, notify } = props;
+  const { question, answers, meId, now, sending, notify } = props;
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
 
   const [text, setText] = useState("");
-  const [panel, setPanel] = useState<"plus" | "sticker" | null>(null);
-  const [replyTo, setReplyTo] = useState<ReplyRef | null>(null);
-  const [menu, setMenu] = useState<{ m: Message; top: number } | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [menu, setMenu] = useState<{ post: Post; top: number } | null>(null);
+  const [confirm, setConfirm] = useState<Confirm | null>(null);
+  /** 「是誰的回答幫到您？」：開啟時記下聊天畫面上看得到哪些回答 */
+  /** 選取模式：直接在聊天畫面上點「幫到我的那則回答」 */
+  const [selecting, setSelecting] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [query, setQuery] = useState("");
-  const [matchIdx, setMatchIdx] = useState(0);
+  const [lightbox, setLightbox] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
 
-  const isGroup = room.type === "group";
+  const label = categoryLabel(props.category);
+  const othersAnswers = useMemo(
+    () => answers.filter((a) => a.author.id !== meId),
+    [answers, meId],
+  );
+  const othersCount = othersAnswers.length;
+  const canResolve =
+    !!question &&
+    question.status !== "resolved" &&
+    !question.accepted_answer_id &&
+    othersCount > 0;
+  /** 像 LINE 群組人數：自己＋回答過的人 */
+  const members = 1 + new Set(othersAnswers.map((a) => a.author.id)).size;
+
+  const posts = useMemo(() => {
+    const out: Post[] = [];
+    if (question) {
+      out.push({
+        key: "question",
+        answer: null,
+        self: true,
+        authorName: question.author.nickname,
+        at: Date.parse(question.created_at),
+        body: question.body,
+        media: question.media,
+        hiddenBody:
+          question.body === null &&
+          question.hidden_parts.some((p) => p.part === "body"),
+      });
+    }
+    for (const a of answers) {
+      out.push({
+        key: a.id,
+        answer: a,
+        self: a.author.id === meId,
+        authorName: a.author.nickname,
+        at: Date.parse(a.created_at),
+        body: a.body,
+        media: a.media,
+        hiddenBody: a.body === null && a.hidden_parts.some((p) => p.part === "body"),
+      });
+    }
+    return out;
+  }, [question, answers, meId]);
 
   const items = useMemo(() => {
     const out: Item[] = [];
-    let prev: Message | undefined;
-    for (const m of messages) {
-      const newDay = !prev || !isSameDay(prev.at, m.at);
+    if (!question) {
+      out.push({
+        type: "note",
+        key: "draft-note",
+        text: "請說說您想問什麼\n可以打字、拍照，或按麥克風錄音",
+      });
+    }
+    let prev: Post | undefined;
+    for (const p of posts) {
+      const newDay = !prev || !isSameDay(prev.at, p.at);
       if (newDay) {
+        out.push({ type: "date", key: `date-${p.key}`, label: formatDateDivider(p.at, now) });
+      }
+      if (p.key === "question") {
         out.push({
-          type: "date",
-          key: `date-${m.key}`,
-          label: formatDateDivider(m.at, now),
+          type: "note",
+          key: "asked-note",
+          text:
+            props.category === "other"
+              ? "你開了一個新問題"
+              : `你開了一個「${label}」的問題`,
         });
       }
-      if (m.key === props.unreadMarkerKey) {
-        out.push({ type: "unread", key: `unread-${m.key}` });
+      if (p.key === props.unreadMarkerKey) {
+        out.push({ type: "unread", key: `unread-${p.key}` });
       }
       const first =
         newDay ||
-        m.key === props.unreadMarkerKey ||
+        p.key === props.unreadMarkerKey ||
         !prev ||
-        prev.kind === "system" ||
-        prev.unsent === true ||
-        prev.self !== m.self ||
-        prev.senderId !== m.senderId ||
-        m.at - prev.at > GROUP_GAP;
-      out.push({ type: "msg", key: m.key, m, first });
-      prev = m;
+        prev.self !== p.self ||
+        prev.authorName !== p.authorName ||
+        p.at - prev.at > GROUP_GAP;
+      out.push({ type: "post", key: p.key, post: p, first });
+      prev = p;
     }
     return out;
-  }, [messages, now, props.unreadMarkerKey]);
+  }, [posts, question, label, now, props.unreadMarkerKey, props.category]);
 
-  // ---- 搜尋 ----
-  const q = query.trim().toLowerCase();
-  const matches = useMemo(
-    () =>
-      q
-        ? messages
-            .filter(
-              (m) =>
-                m.kind === "text" &&
-                !m.unsent &&
-                m.text.toLowerCase().includes(q),
-            )
-            .map((m) => m.key)
-        : [],
-    [messages, q],
-  );
-  const currentMatch = matches.length
-    ? matches[matches.length - 1 - Math.min(matchIdx, matches.length - 1)]
-    : null;
-
-  useEffect(() => {
-    if (!currentMatch) return;
-    listRef.current
-      ?.querySelector(`[data-key="${CSS.escape(currentMatch)}"]`)
-      ?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [currentMatch]);
+  // ---- 手機返回鍵：由上往下一層一層關 ----
+  useBackLayer(true, props.onBack);
+  useBackLayer(drawerOpen, () => setDrawerOpen(false));
+  useBackLayer(selecting, () => setSelecting(false));
+  useBackLayer(recording, () => setRecording(false));
+  useBackLayer(menu !== null, () => setMenu(null));
+  useBackLayer(confirm !== null, () => setConfirm(null));
+  useBackLayer(lightbox !== null, () => setLightbox(null));
 
   // ---- 捲動 ----
   useLayoutEffect(() => {
@@ -162,28 +213,27 @@ export function ChatRoom(props: ChatRoomProps) {
     const marker = list.querySelector("[data-unread-marker]");
     if (marker instanceof HTMLElement) {
       list.scrollTop = marker.offsetTop - 80;
-      // 停在未讀分隔線，不要被下面「捲到最底」的 effect 蓋掉
+      // 停在「以下為新回答」，不要被下面「捲到最底」的 effect 蓋掉
       nearBottomRef.current = false;
     } else {
       list.scrollTop = list.scrollHeight;
     }
-    // 只在進入聊天室時執行
   }, []);
 
-  const lastKey = messages.at(-1)?.key;
-  const lastSelf = messages.at(-1)?.self;
+  const lastKey = posts.at(-1)?.key;
+  const lastSelf = posts.at(-1)?.self;
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;
-    if (lastSelf || nearBottomRef.current) {
+    if (lastSelf || sending || nearBottomRef.current) {
       list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
     }
-  }, [lastKey, lastSelf]);
+  }, [lastKey, lastSelf, sending]);
 
   useEffect(() => {
     const list = listRef.current;
     if (list && nearBottomRef.current) list.scrollTop = list.scrollHeight;
-  }, [panel, replyTo]);
+  }, [recording]);
 
   function handleScroll() {
     const list = listRef.current;
@@ -193,24 +243,60 @@ export function ChatRoom(props: ChatRoomProps) {
     setShowJump(!near);
   }
 
-  // ---- 傳送 ----
-  function send() {
+  // ---- 送出 ----
+  async function sendText() {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    props.onSend("text", trimmed.slice(0, MAX_LENGTH), replyTo ?? undefined);
-    setText("");
-    setReplyTo(null);
+    if (!trimmed || sending) return;
+    if (trimmed.length > META.limits.question_body_max_chars) {
+      notify("字數太多了，請分幾次傳送", "error");
+      return;
+    }
+    if (await props.onSend({ kind: "text", text: trimmed })) setText("");
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    // 中文輸入法選字時按 Enter 不送出
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    // 手機上 Enter 是換行（同 LINE），只有用滑鼠的電腦按 Enter 才送出；
+    // 中文輸入法選字時按 Enter 也不送出
+    if (
+      e.key === "Enter" &&
+      !e.shiftKey &&
+      !e.nativeEvent.isComposing &&
+      window.matchMedia("(pointer: fine)").matches
+    ) {
       e.preventDefault();
-      send();
+      sendText();
     }
   }
 
-  function openMenu(m: Message, el: HTMLElement) {
+  function handlePickFiles(e: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length === 0) return;
+    if (files.length > META.limits.media_per_post_max) {
+      notify(`一次最多傳 ${META.limits.media_per_post_max} 張照片`, "error");
+      return;
+    }
+    if (files.some((f) => !IMAGE_TYPES.includes(f.type))) {
+      notify("照片格式要是 JPEG、PNG 或 WebP", "error");
+      return;
+    }
+    if (files.some((f) => f.size > META.limits.image_max_bytes)) {
+      notify("照片太大了，每張不能超過 10 MB", "error");
+      return;
+    }
+    props.onSend({ kind: "images", files });
+  }
+
+  /**
+   * 長輩按「問題解決了」時，幫到他的回答通常就在畫面上，
+   * 所以不另外列清單，畫面停在原地，直接點那則回答（像 LINE 的選取訊息）。
+   */
+  function startSelecting() {
+    setMenu(null);
+    setSelecting(true);
+  }
+
+  function openMenu(post: Post, el: HTMLElement) {
     const root = rootRef.current;
     if (!root) return;
     const box = root.getBoundingClientRect();
@@ -218,16 +304,37 @@ export function ChatRoom(props: ChatRoomProps) {
     let top = r.top - box.top - 76;
     if (top < 60) top = r.bottom - box.top + 8;
     top = Math.min(top, box.height - 90);
-    setMenu({ m, top });
+    setMenu({ post, top });
   }
 
-  const members = useMemo(() => {
-    const names = new Set(room.members ?? []);
-    for (const m of messages) {
-      if (!m.self && m.kind !== "system") names.add(m.senderName);
+  async function copy(textToCopy: string) {
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      notify("已複製");
+    } catch {
+      notify("無法存取剪貼簿", "error");
     }
-    return [...names];
-  }, [room.members, messages]);
+  }
+
+  const banner = !question
+    ? null
+    : question.status === "resolved"
+      ? { text: "這個問題已經解決了", className: "bg-claude-green/15 text-claude-green" }
+      : question.status === "in_progress"
+        ? { text: "有人正在協助您", className: "bg-claude-blue/15 text-claude-blue" }
+        : othersCount === 0
+          ? { text: "已送出，正在等待熱心的人回答", className: "bg-claude-sand text-stone-600" }
+          : { text: "收到回答了！問題解決了嗎？", className: "bg-claude/15 text-claude-dark" };
+
+  const subtitle = !question
+    ? "還沒送出"
+    : question.status === "resolved"
+      ? "已解決"
+      : question.status === "in_progress"
+        ? "協助中"
+        : othersCount === 0
+          ? "等待回答"
+          : `${othersCount} 個回答`;
 
   return (
     <div
@@ -235,96 +342,72 @@ export function ChatRoom(props: ChatRoomProps) {
       className="absolute inset-0 z-20 flex flex-col animate-in duration-200 slide-in-from-right"
       style={{ background: CHAT_BG }}
     >
-      {searching ? (
-        <header className="flex h-13 shrink-0 items-center gap-2 px-2">
-          <label className="flex h-9 flex-1 items-center gap-2 rounded-lg bg-claude-ivory px-3 text-stone-500">
-            <Search className="size-4 shrink-0" />
-            <input
-              autoFocus
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setMatchIdx(0);
-              }}
-              placeholder="搜尋聊天記錄"
-              className="min-w-0 flex-1 bg-transparent text-[15px] text-stone-900 outline-none"
-            />
-            {q && (
-              <span className="shrink-0 text-xs text-stone-500">
-                {matches.length
-                  ? `${Math.min(matchIdx, matches.length - 1) + 1}/${matches.length}`
-                  : "0 筆"}
-              </span>
-            )}
-          </label>
-          <IconButton
-            label="較舊的結果"
-            onClick={() =>
-              setMatchIdx((i) => Math.min(i + 1, Math.max(matches.length - 1, 0)))
-            }
-          >
-            <ChevronUp className="size-5" />
-          </IconButton>
-          <IconButton
-            label="較新的結果"
-            onClick={() => setMatchIdx((i) => Math.max(i - 1, 0))}
-          >
-            <ChevronDown className="size-5" />
-          </IconButton>
-          <button
-            type="button"
-            onClick={() => {
-              setSearching(false);
-              setQuery("");
-            }}
-            className="px-1 text-[15px] font-medium text-stone-900"
-          >
-            取消
-          </button>
+      {selecting ? (
+        <header className="flex h-16 shrink-0 items-center justify-center bg-claude-ink px-4 text-white">
+          <p className="text-[19px] font-bold">請點一下幫到您的那則回答</p>
         </header>
       ) : (
-        <header className="flex h-13 shrink-0 items-center gap-1 pr-1 pl-0.5">
+        <header className="flex h-16 shrink-0 items-center gap-1 pr-1 pl-0.5">
           <button
             type="button"
             onClick={props.onBack}
             aria-label="返回聊天列表"
-            className="flex h-10 items-center rounded-full pr-1 text-stone-900 hover:bg-black/5"
+            className="flex h-12 min-w-12 shrink-0 items-center rounded-full pr-1.5 text-stone-900 hover:bg-black/5"
           >
-            <ChevronLeft className="size-7" />
+            <ChevronLeft className="size-8" />
             {props.unreadElsewhere > 0 && (
-              <span className="-ml-1 text-[15px] font-medium">
+              <span className="-ml-1 text-[17px] font-medium">
                 {props.unreadElsewhere > 99 ? "99+" : props.unreadElsewhere}
               </span>
             )}
           </button>
-          <h1 className="flex min-w-0 flex-1 items-center gap-1 text-[17px] font-bold text-stone-900">
-            <span className="truncate">{room.name}</span>
-            {room.members && (
-              <span className="shrink-0 font-normal">
-                ({room.members.length + 1})
+          <div className="min-w-0 flex-1">
+            <h1 className="flex items-center gap-1 text-[18px] leading-tight font-bold text-stone-900">
+              <span className="truncate">
+                {question ? (question.title ?? "（內容待確認）") : "新問題"}
               </span>
-            )}
-            {room.muted && (
-              <BellOff className="size-4 shrink-0" aria-label="已關閉提醒" />
-            )}
-          </h1>
-          <IconButton label="搜尋" onClick={() => setSearching(true)}>
-            <Search className="size-5.5" />
-          </IconButton>
-          <IconButton label="通話" onClick={() => notify("通話功能為示意，尚未實作")}>
-            <Phone className="size-5.5" />
-          </IconButton>
-          <IconButton label="聊天室選單" onClick={() => setDrawerOpen(true)}>
-            <Menu className="size-6" />
-          </IconButton>
+              {members > 1 && <span className="shrink-0 font-normal">({members})</span>}
+              {props.prefs?.muted && (
+                <BellOff className="size-4 shrink-0" aria-label="已關閉提醒" />
+              )}
+            </h1>
+            <p className="truncate text-[14px] text-stone-600">{subtitle}</p>
+          </div>
+          {question && (
+            <IconButton label="問題選單" onClick={() => setDrawerOpen(true)}>
+              <Menu className="size-7" />
+            </IconButton>
+          )}
         </header>
       )}
 
-      {status !== "connected" && (
-        <p className="shrink-0 bg-claude/15 py-1 text-center text-xs text-claude-dark">
-          {status === "connecting" ? "連線中…" : "目前離線，訊息無法傳送"}
-        </p>
-      )}
+      {banner &&
+        !selecting &&
+        (canResolve ? (
+          // 像 LINE 群組的公告列：點一下就能說「問題解決了」
+          <button
+            type="button"
+            onClick={startSelecting}
+            className={cn(
+              "flex min-h-12 shrink-0 items-center justify-center gap-1 px-3 py-2 text-center text-[16px] font-medium",
+              banner.className,
+            )}
+          >
+            {banner.text}
+            <span className="font-bold underline underline-offset-2">點這裡</span>
+            <ChevronRight className="size-4" />
+          </button>
+        ) : (
+          <p
+            className={cn(
+              "flex shrink-0 items-center justify-center gap-1.5 px-3 py-2 text-center text-[15px] font-medium",
+              banner.className,
+            )}
+          >
+            {question?.status === "resolved" && <CircleCheckBig className="size-4" />}
+            {banner.text}
+          </p>
+        ))}
 
       <div
         ref={listRef}
@@ -332,17 +415,27 @@ export function ChatRoom(props: ChatRoomProps) {
         className="relative flex-1 overflow-y-auto px-3 pt-1 pb-3"
         aria-live="polite"
       >
-        {items.length === 0 && (
-          <p className="mt-10 text-center text-sm text-stone-500">
-            還沒有訊息，傳個貼圖打招呼吧！
-          </p>
-        )}
         {items.map((item) => {
           if (item.type === "date") {
             return (
-              <div key={item.key} className="my-3 flex justify-center">
-                <span className="rounded-full bg-claude-sand px-3 py-0.5 text-xs text-stone-600">
+              <div
+                key={item.key}
+                className={cn("my-3 flex justify-center", selecting && "opacity-35")}
+              >
+                <span className="rounded-full bg-claude-sand px-3 py-0.5 text-[13px] text-stone-700">
                   {item.label}
+                </span>
+              </div>
+            );
+          }
+          if (item.type === "note") {
+            return (
+              <div
+                key={item.key}
+                className={cn("my-3 flex justify-center px-4", selecting && "opacity-35")}
+              >
+                <span className="rounded-2xl bg-claude-sand px-4 py-2.5 text-center text-[16px] leading-relaxed whitespace-pre-wrap text-stone-700">
+                  {item.text}
                 </span>
               </div>
             );
@@ -352,313 +445,356 @@ export function ChatRoom(props: ChatRoomProps) {
               <div
                 key={item.key}
                 data-unread-marker
-                className="my-3 flex justify-center"
+                className={cn("my-3 flex justify-center", selecting && "opacity-35")}
               >
-                <span className="rounded-full bg-claude/12 px-3 py-1 text-xs text-claude-dark">
-                  以下為尚未閱讀的訊息
+                <span className="rounded-full bg-claude/12 px-3 py-1 text-[13px] font-medium text-claude-dark">
+                  以下為新回答
                 </span>
               </div>
             );
           }
           return (
-            <MessageRow
+            <PostRow
               key={item.key}
-              m={item.m}
+              post={item.post}
               first={item.first}
-              showName={isGroup || item.m.senderName !== room.name}
-              isGroup={isGroup}
-              query={q}
-              active={item.key === currentMatch}
               onMenu={openMenu}
-              onRetry={props.onRetry}
+              onOpenImage={setLightbox}
+              selectMode={selecting}
+              selected={
+                confirm?.kind === "accept" && confirm.answer.id === item.key
+              }
+              onSelect={(a) => setConfirm({ kind: "accept", answer: a })}
             />
           );
         })}
+        {sending && (
+          <div className="mt-3 flex justify-end">
+            <span className="flex items-center gap-1.5 rounded-full bg-claude/15 px-3 py-1.5 text-[14px] text-claude-dark">
+              <LoaderCircle className="size-3.5 animate-spin" />
+              傳送中…
+            </span>
+          </div>
+        )}
       </div>
 
       {showJump && (
         <button
           type="button"
-          aria-label="捲到最新訊息"
+          aria-label="捲到最新回答"
           onClick={() =>
-            listRef.current?.scrollTo({
-              top: listRef.current.scrollHeight,
-              behavior: "smooth",
-            })
+            listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" })
           }
-          className="absolute right-3 z-10 flex size-9 items-center justify-center rounded-full bg-claude-ivory text-stone-700 shadow-md ring-1 ring-claude-sand"
-          style={{ bottom: panel ? 330 : 72 }}
+          className="absolute right-3 bottom-24 z-10 flex size-11 items-center justify-center rounded-full bg-claude-ivory text-stone-700 shadow-md ring-1 ring-claude-sand"
         >
           <ChevronDown className="size-5" />
         </button>
       )}
 
-      {replyTo && (
-        <div className="flex shrink-0 items-center gap-3 border-t border-claude-sand bg-claude-ivory px-4 py-2">
-          <Reply className="size-4 shrink-0 text-claude" />
-          <div className="min-w-0 flex-1 text-xs">
-            <p className="font-semibold text-stone-800">回覆 {replyTo.name}</p>
-            <p className="truncate text-stone-500">{replyTo.text}</p>
-          </div>
-          <IconButton label="取消回覆" className="size-7" onClick={() => setReplyTo(null)}>
-            <X className="size-4" />
-          </IconButton>
-        </div>
-      )}
-
-      <div className="flex shrink-0 items-end gap-0.5 border-t border-claude-sand bg-claude-ivory px-1.5 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        <IconButton
-          label="更多功能"
-          onClick={() => setPanel((p) => (p === "plus" ? null : "plus"))}
-        >
-          <Plus
-            className={cn(
-              "size-6 transition-transform",
-              panel === "plus" && "rotate-45",
-            )}
-          />
-        </IconButton>
-        {!text && (
-          <>
-            <IconButton label="相機" onClick={() => notify("相機為示意功能")}>
-              <Camera className="size-6" />
-            </IconButton>
-            <IconButton label="照片" onClick={() => notify("傳送照片為示意功能")}>
-              <ImageIcon className="size-6" />
-            </IconButton>
-          </>
-        )}
-        <div className="mx-1 flex min-h-9 flex-1 items-end rounded-[18px] bg-claude-sand/70 pr-0.5 pl-3.5">
-          <textarea
-            ref={inputRef}
-            rows={1}
-            value={text}
-            maxLength={MAX_LENGTH}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onFocus={() => setPanel(null)}
-            placeholder="Aa"
-            aria-label="輸入訊息"
-            className="field-sizing-content max-h-28 min-h-9 min-w-0 flex-1 resize-none bg-transparent py-2 text-[15px] leading-5 outline-none placeholder:text-stone-400"
-          />
-          <IconButton
-            label="貼圖"
-            className={cn("size-8", panel === "sticker" && "text-claude")}
-            onClick={() => setPanel((p) => (p === "sticker" ? null : "sticker"))}
+      {selecting ? (
+        <div className="shrink-0 border-t border-claude-sand bg-claude-ivory px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <button
+            type="button"
+            onClick={() => setSelecting(false)}
+            className="w-full rounded-2xl bg-claude-sand py-3.5 text-lg font-medium text-stone-700 active:bg-stone-300"
           >
-            <Smile className="size-5.5" />
-          </IconButton>
+            取消
+          </button>
         </div>
-        {text.trim() ? (
-          <IconButton label="傳送" className="text-claude" onClick={send}>
-            <SendHorizontal className="size-6" />
+      ) : recording ? (
+        <VoiceRecorder
+          maxSeconds={META.limits.audio_max_seconds}
+          onCancel={() => setRecording(false)}
+          onDone={(blob, duration) => {
+            setRecording(false);
+            props.onSend({ kind: "audio", blob, duration });
+          }}
+          onError={(message) => {
+            setRecording(false);
+            notify(message, "error");
+          }}
+        />
+      ) : (
+        <div className="flex shrink-0 items-end gap-0.5 border-t border-claude-sand bg-claude-ivory px-1.5 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+          <IconButton
+            label="拍照"
+            disabled={sending}
+            onClick={() => cameraRef.current?.click()}
+          >
+            <Camera className="size-7" />
           </IconButton>
-        ) : (
-          <IconButton label="語音訊息" onClick={() => notify("語音訊息為示意功能")}>
-            <Mic className="size-6" />
+          <IconButton
+            label="從相簿選照片"
+            disabled={sending}
+            onClick={() => galleryRef.current?.click()}
+          >
+            <ImageIcon className="size-7" />
           </IconButton>
-        )}
-      </div>
-
-      {panel === "plus" && <PlusPanel notify={notify} />}
-      {panel === "sticker" && (
-        <div className="grid h-64 shrink-0 grid-cols-4 content-start gap-2 overflow-y-auto border-t border-claude-sand bg-claude-ivory p-3">
-          {STICKERS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => props.onSend("sticker", s)}
-              className="flex aspect-square items-center justify-center rounded-xl text-5xl transition-transform hover:bg-claude-sand/40 active:scale-90"
-              aria-label={`傳送貼圖 ${s}`}
+          <div className="mx-1 flex min-h-12 flex-1 items-end rounded-[24px] bg-claude-sand/70 px-4">
+            <textarea
+              rows={1}
+              value={text}
+              maxLength={META.limits.question_body_max_chars}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={question ? "補充說明…" : "請輸入您的問題…"}
+              aria-label={question ? "補充說明" : "輸入問題"}
+              className="field-sizing-content max-h-36 min-h-12 min-w-0 flex-1 resize-none bg-transparent py-3 text-[17px] leading-6 outline-none placeholder:text-stone-500"
+            />
+          </div>
+          {text.trim() ? (
+            <IconButton
+              label="傳送"
+              className="text-claude-dark"
+              disabled={sending}
+              onClick={sendText}
             >
-              {s}
-            </button>
-          ))}
+              {sending ? (
+                <LoaderCircle className="size-7 animate-spin" />
+              ) : (
+                <SendHorizontal className="size-7" />
+              )}
+            </IconButton>
+          ) : (
+            <IconButton
+              label="錄音"
+              disabled={sending}
+              onClick={() => setRecording(true)}
+            >
+              <Mic className="size-7" />
+            </IconButton>
+          )}
         </div>
       )}
+      <input
+        ref={cameraRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={handlePickFiles}
+      />
+      <input
+        ref={galleryRef}
+        type="file"
+        accept={IMAGE_TYPES.join(",")}
+        multiple
+        hidden
+        onChange={handlePickFiles}
+      />
 
       {menu && (
-        <MessageMenu
-          m={menu.m}
+        <PostMenu
+          post={menu.post}
           top={menu.top}
-          now={now}
           onClose={() => setMenu(null)}
-          onReply={() => {
-            setReplyTo({
-              key: menu.m.key,
-              name: menu.m.self ? props.nickname : menu.m.senderName,
-              text: summarize(menu.m),
-            });
-            inputRef.current?.focus();
-          }}
-          onCopy={async () => {
-            try {
-              await navigator.clipboard.writeText(menu.m.text);
-              notify("已複製");
-            } catch {
-              notify("無法存取剪貼簿");
-            }
-          }}
-          onUnsend={() => props.onUnsend(menu.m.key)}
-          onDelete={() => props.onDelete(menu.m.key)}
+          onCopy={() => copy(menu.post.body ?? "")}
+          onDelete={() => menu.post.answer && props.onDeleteAnswer(menu.post.answer)}
         />
       )}
 
-      {drawerOpen && (
-        <RoomDrawer
-          room={room}
-          members={members}
-          nickname={props.nickname}
+      {drawerOpen && question && (
+        <QuestionDrawer
+          question={question}
+          prefs={props.prefs}
+          answerCount={othersCount}
+          canResolve={canResolve}
+          onResolve={() => {
+            setDrawerOpen(false);
+            startSelecting();
+          }}
           onClose={() => setDrawerOpen(false)}
           onToggleMute={props.onToggleMute}
-          onHide={props.onHide}
-          notify={notify}
+          onTogglePin={props.onTogglePin}
+          onWithdraw={() => setConfirm({ kind: "withdraw" })}
         />
       )}
+
+      {confirm?.kind === "accept" && (
+        <ConfirmDialog
+          title={`是「${confirm.answer.author.nickname}」這則回答幫到您嗎？`}
+          quote={
+            confirm.answer.body ??
+            (confirm.answer.media.some((m) => m.kind === "audio")
+              ? "（語音訊息）"
+              : "（照片）")
+          }
+          body="確定後，這個問題會標示為「已解決」，之後不能更改。"
+          confirmLabel="是，解決了"
+          // 按取消會留在選取模式，可以改點別則
+          onCancel={() => setConfirm(null)}
+          onConfirm={async () => {
+            setConfirm(null);
+            setSelecting(false);
+            await props.onAccept(confirm.answer);
+          }}
+        />
+      )}
+      {confirm?.kind === "withdraw" && (
+        <ConfirmDialog
+          title="撤回這個問題？"
+          body="撤回後，問題和所有回答都會消失，不能復原。"
+          confirmLabel="撤回"
+          danger
+          onCancel={() => setConfirm(null)}
+          onConfirm={async () => {
+            setConfirm(null);
+            setDrawerOpen(false);
+            await props.onWithdraw();
+          }}
+        />
+      )}
+
+      {lightbox && <Lightbox url={lightbox} onClose={() => setLightbox(null)} />}
     </div>
   );
 }
 
-function MessageRow({
-  m,
+function PostRow({
+  post,
   first,
-  showName,
-  isGroup,
-  query,
-  active,
   onMenu,
-  onRetry,
+  onOpenImage,
+  selectMode,
+  selected,
+  onSelect,
 }: {
-  m: Message;
+  post: Post;
   first: boolean;
-  showName: boolean;
-  isGroup: boolean;
-  query: string;
-  active: boolean;
-  onMenu: (m: Message, el: HTMLElement) => void;
-  onRetry: (key: string) => void;
+  onMenu: (post: Post, el: HTMLElement) => void;
+  onOpenImage: (url: string) => void;
+  selectMode: boolean;
+  selected: boolean;
+  onSelect: (answer: Answer) => void;
 }) {
-  const press = useLongPress((el) => onMenu(m, el));
+  const press = useLongPress((el) => onMenu(post, el));
+  const accepted = post.answer?.is_accepted === true;
+  const answer = post.answer;
+  const selectable = selectMode && answer !== null && !post.self;
 
-  if (m.kind === "system" || m.unsent) {
-    return (
-      <div data-key={m.key} className="my-2 flex justify-center px-6">
-        <span className="rounded-full bg-claude-sand px-3 py-1 text-center text-xs whitespace-pre-wrap text-stone-600">
-          {m.unsent ? summarize(m) : m.text}
-        </span>
-      </div>
-    );
-  }
-
-  const readCount = m.readBy.length;
-  const readLabel =
-    m.self && readCount > 0 ? (isGroup ? `已讀 ${readCount}` : "已讀") : null;
-
-  const meta = (
+  const bubbles = (
     <div
+      {...(selectMode ? {} : press)}
       className={cn(
-        "flex shrink-0 flex-col pb-0.5 text-[10px] leading-tight text-stone-500",
-        m.self ? "items-end" : "items-start",
+        "flex min-w-0 flex-col gap-1 select-none [-webkit-touch-callout:none]",
+        post.self ? "items-end" : "items-start",
       )}
     >
-      {m.failed ? (
-        <button
-          type="button"
-          onClick={() => onRetry(m.key)}
-          className="mb-0.5 flex items-center gap-0.5 text-red-600"
-          title="重新傳送"
+      {(post.body !== null || post.hiddenBody) && (
+        <TextBubble
+          self={post.self}
+          tail={first}
+          accepted={accepted}
         >
-          <CircleAlert className="size-3.5" />
-          重送
-        </button>
-      ) : (
-        readLabel && <span>{readLabel}</span>
+          {post.hiddenBody ? (
+            <span className="text-stone-400 italic">內容待確認個資，暫時隱藏</span>
+          ) : (
+            post.body
+          )}
+        </TextBubble>
       )}
-      <span>{formatClock(m.at)}</span>
+      {post.media.map((m) =>
+        m.kind === "image" ? (
+          <ImageBubble key={m.id} media={m} onOpen={onOpenImage} />
+        ) : (
+          <AudioBubble key={m.id} media={m} self={post.self} />
+        ),
+      )}
     </div>
   );
-
-  const content = (
-    <div
-      {...press}
-      className={cn(
-        "min-w-0 select-none [-webkit-touch-callout:none]",
-        active && "rounded-[18px] ring-3 ring-claude/50",
-      )}
-    >
-      <Content m={m} tail={first} query={query} />
-    </div>
+  const time = (
+    <span className="shrink-0 pb-0.5 text-[12px] leading-tight text-stone-500">
+      {formatClock(post.at)}
+    </span>
   );
 
-  if (m.self) {
+  if (post.self) {
     return (
       <div
-        data-key={m.key}
+        data-key={post.key}
         className={cn(
-          "flex items-end justify-end gap-1.5 pl-14",
+          "flex items-end justify-end gap-1.5 pl-12",
           first ? "mt-3" : "mt-1",
+          // 選取模式時自己的訊息不能選，變淡
+          selectMode && "pointer-events-none opacity-35",
         )}
       >
-        {meta}
-        {content}
+        {time}
+        {bubbles}
       </div>
     );
   }
 
   return (
     <div
-      data-key={m.key}
-      className={cn("flex items-start gap-2 pr-10", first ? "mt-3" : "mt-1")}
+      data-key={post.key}
+      className={cn(
+        "relative flex items-start gap-2 pr-8",
+        first ? "mt-3" : "mt-1.5",
+        selectMode && !selectable && "pointer-events-none opacity-35",
+      )}
     >
-      <div className="w-9 shrink-0">
-        {first && <Avatar name={m.senderName} size={36} />}
-      </div>
+      {selectable && (
+        <>
+          {/* 整列都能點，長輩不用瞄準泡泡 */}
+          <button
+            type="button"
+            onClick={() => onSelect(answer)}
+            aria-label={`選擇「${post.authorName}」的這則回答`}
+            className="absolute inset-0 z-10 rounded-2xl active:bg-black/5"
+          />
+          <span
+            aria-hidden
+            className={cn(
+              "flex size-7 shrink-0 items-center justify-center self-center rounded-full border-2",
+              selected ? "border-claude bg-claude text-white" : "border-stone-300 bg-white",
+            )}
+          >
+            {selected && <Check className="size-4" strokeWidth={3} />}
+          </span>
+        </>
+      )}
+      <div className="w-9 shrink-0">{first && <Avatar name={post.authorName} size={36} />}</div>
       <div className="flex min-w-0 flex-col items-start">
-        {first && showName && (
-          <span className="mb-1 max-w-full truncate text-[11px] text-stone-600">
-            {m.senderName}
+        {first && (
+          <span className="mb-1 max-w-full truncate text-[14px] text-stone-700">
+            {post.authorName}
           </span>
         )}
         <div className="flex max-w-full items-end gap-1.5">
-          {content}
-          {meta}
+          {bubbles}
+          {time}
         </div>
+        {accepted && (
+          <span className="mt-1 flex items-center gap-1 text-[14px] font-medium text-claude-green">
+            <CircleCheckBig className="size-4" />
+            解決了我的問題
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
-function Content({
-  m,
+function TextBubble({
+  self,
   tail,
-  query,
+  accepted,
+  children,
 }: {
-  m: Message;
+  self: boolean;
   tail: boolean;
-  query: string;
+  accepted: boolean;
+  children: ReactNode;
 }) {
-  if (m.kind === "sticker") {
-    return (
-      <div className="px-1 text-[72px] leading-none" role="img" aria-label="貼圖">
-        {m.text}
-      </div>
-    );
-  }
-  if (m.kind === "image") {
-    return (
-      <div className="flex h-36 w-52 flex-col items-center justify-center gap-2 rounded-2xl bg-linear-to-br from-[#f3d9cb] via-claude-sand to-[#c9dbeb] text-stone-700 shadow-sm">
-        <ImageIcon className="size-8" />
-        <span className="px-3 text-center text-xs font-medium">{m.text}</span>
-      </div>
-    );
-  }
-  const color = m.self ? SELF_BUBBLE : "#ffffff";
+  const color = self ? SELF_BUBBLE : "#ffffff";
   return (
     <div
       className={cn(
-        "relative rounded-[18px] px-3 py-2 text-[15px] leading-snug wrap-break-word whitespace-pre-wrap",
-        m.self ? "text-white" : "text-claude-ink shadow-[0_1px_1px_rgb(20_20_19/0.06)]",
-        tail && (m.self ? "rounded-tr-[4px]" : "rounded-tl-[4px]"),
+        "relative rounded-[18px] px-3.5 py-2.5 text-[17px] leading-snug wrap-break-word whitespace-pre-wrap text-claude-ink",
+        !self && "shadow-[0_1px_1px_rgb(20_20_19/0.06)]",
+        tail && (self ? "rounded-tr-[4px]" : "rounded-tl-[4px]"),
+        accepted && "ring-2 ring-claude-green",
       )}
       style={{ background: color }}
     >
@@ -668,83 +804,37 @@ function Content({
           width="9"
           height="12"
           viewBox="0 0 9 12"
-          className={cn(
-            "absolute top-0",
-            m.self ? "-right-[7px] -scale-x-100" : "-left-[7px]",
-          )}
+          className={cn("absolute top-0", self ? "-right-[7px] -scale-x-100" : "-left-[7px]")}
         >
-          <path d="M9 0H1.2C.2 0-.3 1.2.4 1.9L9 12Z" fill={color} />
+          <path d="M9 0H1.2C.2 0-.3 1.2.4 1.9L9 12Z" style={{ fill: color }} />
         </svg>
       )}
-      {m.replyTo && (
-        <div
-          className={cn(
-            "mb-1.5 border-b pb-1.5 text-xs",
-            m.self
-              ? "border-white/30 text-white/80"
-              : "border-black/10 text-stone-500",
-          )}
-        >
-          <p className={cn("font-semibold", m.self ? "text-white" : "text-stone-700")}>
-            {m.replyTo.name}
-          </p>
-          <p className="line-clamp-2">{m.replyTo.text}</p>
-        </div>
-      )}
-      <Highlight text={m.text} query={query} />
+      {children}
     </div>
   );
 }
 
-function Highlight({ text, query }: { text: string; query: string }) {
-  if (!query) return <>{text}</>;
-  const lower = text.toLowerCase();
-  const parts: ReactNode[] = [];
-  let i = 0;
-  while (i < text.length) {
-    const found = lower.indexOf(query, i);
-    if (found === -1) {
-      parts.push(text.slice(i));
-      break;
-    }
-    if (found > i) parts.push(text.slice(i, found));
-    parts.push(
-      <mark key={found} className="rounded-sm bg-[#f6d77a] text-claude-ink">
-        {text.slice(found, found + query.length)}
-      </mark>,
-    );
-    i = found + query.length;
-  }
-  return <>{parts}</>;
-}
-
-function MessageMenu({
-  m,
+function PostMenu({
+  post,
   top,
-  now,
   onClose,
-  onReply,
   onCopy,
-  onUnsend,
   onDelete,
 }: {
-  m: Message;
+  post: Post;
   top: number;
-  now: number;
   onClose: () => void;
-  onReply: () => void;
   onCopy: () => void;
-  onUnsend: () => void;
   onDelete: () => void;
 }) {
-  const actions: { label: string; icon: LucideIcon; run: () => void }[] = [
-    { label: "回覆", icon: Reply, run: onReply },
-    ...(m.kind === "text" ? [{ label: "複製", icon: Copy, run: onCopy }] : []),
-    ...(m.self && !m.failed && now - m.at < UNSEND_LIMIT
-      ? [{ label: "收回", icon: Undo2, run: onUnsend }]
-      : []),
-    { label: "刪除", icon: Trash2, run: onDelete },
-  ];
+  const a = post.answer;
+  const actions: { label: string; icon: LucideIcon; run: () => void }[] = [];
+  if (post.body) actions.push({ label: "複製", icon: Copy, run: onCopy });
+  if (a && post.self && !a.is_accepted) {
+    actions.push({ label: "刪除", icon: Trash2, run: onDelete });
+  }
+  if (actions.length === 0) return null;
+
   return (
     <div className="absolute inset-0 z-30">
       <button
@@ -767,9 +857,9 @@ function MessageMenu({
               run();
               onClose();
             }}
-            className="flex w-14 flex-col items-center gap-1 rounded-xl py-2 text-[11px] text-stone-700 hover:bg-claude-sand/60"
+            className="flex w-18 flex-col items-center gap-1 rounded-xl py-2.5 text-[15px] text-stone-800 hover:bg-claude-sand/60"
           >
-            <Icon className="size-5" />
+            <Icon className="size-6" />
             {label}
           </button>
         ))}
@@ -778,153 +868,166 @@ function MessageMenu({
   );
 }
 
-const PLUS_ITEMS: { label: string; icon: LucideIcon }[] = [
-  { label: "照片", icon: Images },
-  { label: "相機", icon: Camera },
-  { label: "語音通話", icon: Phone },
-  { label: "位置資訊", icon: MapPin },
-  { label: "聯絡資訊", icon: Contact },
-  { label: "檔案", icon: File },
-  { label: "投票", icon: ChartBar },
-  { label: "活動", icon: Calendar },
-];
-
-function PlusPanel({ notify }: { notify: (text: string) => void }) {
-  return (
-    <div className="grid h-64 shrink-0 grid-cols-4 content-center gap-y-5 border-t border-claude-sand bg-claude-ivory px-3">
-      {PLUS_ITEMS.map(({ label, icon: Icon }) => (
-        <button
-          key={label}
-          type="button"
-          onClick={() => notify(`「${label}」為示意功能`)}
-          className="flex flex-col items-center gap-1.5 text-xs text-stone-600"
-        >
-          <span className="flex size-13 items-center justify-center rounded-full border border-claude-sand text-stone-700 transition-colors hover:bg-claude-sand/40">
-            <Icon className="size-6" />
-          </span>
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function RoomDrawer({
-  room,
-  members,
-  nickname,
+function QuestionDrawer({
+  question,
+  prefs,
+  answerCount,
+  canResolve,
+  onResolve,
   onClose,
   onToggleMute,
-  onHide,
-  notify,
+  onTogglePin,
+  onWithdraw,
 }: {
-  room: Room;
-  members: string[];
-  nickname: string;
+  question: QuestionDetail;
+  prefs: QuestionPrefs | null;
+  answerCount: number;
+  canResolve: boolean;
+  onResolve: () => void;
   onClose: () => void;
   onToggleMute: () => void;
-  onHide: () => void;
-  notify: (text: string) => void;
+  onTogglePin: () => void;
+  onWithdraw: () => void;
 }) {
+  const muted = prefs?.muted ?? false;
+  const pinned = prefs?.pinned ?? false;
   const quick: { label: string; icon: LucideIcon; run: () => void }[] = [
-    {
-      label: room.muted ? "開啟提醒" : "關閉提醒",
-      icon: room.muted ? BellOff : Bell,
-      run: onToggleMute,
-    },
-    { label: "邀請", icon: UserPlus, run: () => notify("邀請為示意功能") },
-    { label: "相簿", icon: Images, run: () => notify("相簿為示意功能") },
-    { label: "記事本", icon: NotebookPen, run: () => notify("記事本為示意功能") },
+    { label: muted ? "開啟提醒" : "關閉提醒", icon: muted ? BellOff : Bell, run: onToggleMute },
+    { label: pinned ? "取消釘選" : "釘選", icon: Pin, run: onTogglePin },
   ];
-  const links: { label: string; icon: LucideIcon }[] = [
-    { label: "照片・影片", icon: ImageIcon },
-    { label: "檔案", icon: File },
-    { label: "連結", icon: Link },
-    { label: "活動", icon: Calendar },
+  const statusLabel =
+    question.status === "resolved" ? "已解決" : question.status === "in_progress" ? "協助中" : "等待回答";
+  const asked = new Date(question.created_at);
+  const rows: [string, string][] = [
+    ["分類", categoryLabel(question.category)],
+    ["狀態", statusLabel],
+    ["回答", `${answerCount} 則`],
+    ["發問時間", `${asked.getMonth() + 1}/${asked.getDate()} ${formatClock(asked.getTime())}`],
   ];
-  const typeLabel =
-    room.type === "official" ? "官方帳號" : room.type === "group" ? "群組" : "好友";
 
   return (
     <div className="absolute inset-0 z-40">
       <button
         type="button"
-        aria-label="關閉聊天室選單"
+        aria-label="關閉問題選單"
         onClick={onClose}
         className="absolute inset-0 cursor-default bg-black/40 animate-in fade-in"
       />
       <aside className="absolute inset-y-0 right-0 flex w-[84%] flex-col bg-claude-ivory shadow-2xl animate-in duration-200 slide-in-from-right">
         <div className="flex justify-end p-2">
           <IconButton label="關閉" onClick={onClose}>
-            <X className="size-5" />
+            <X className="size-7" />
           </IconButton>
         </div>
-        <div className="flex flex-col items-center px-4 pb-4">
-          <Avatar name={room.name} type={room.type} size={72} />
-          <p className="mt-2 max-w-full truncate text-lg font-bold">
-            {room.name}
-          </p>
-          <p className="max-w-full truncate text-xs text-stone-500">
-            {room.status ?? typeLabel}
+        <div className="flex flex-col items-center px-5 pb-4">
+          <QuestionAvatar q={question} size={72} />
+          <p className="mt-3 text-center text-lg leading-snug font-bold">
+            {question.title ?? "（內容待確認）"}
           </p>
         </div>
-        <div className="grid grid-cols-4 border-y border-claude-sand/70 py-3">
+        <div className="grid grid-cols-2 border-y border-claude-sand/70 py-3">
           {quick.map(({ label, icon: Icon, run }) => (
             <button
               key={label}
               type="button"
               onClick={run}
-              className="flex flex-col items-center gap-1 text-[11px] text-stone-600"
+              className="flex min-h-16 flex-col items-center justify-center gap-1 text-[15px] text-stone-700"
             >
-              <Icon className="size-6 text-stone-800" />
+              <Icon className="size-7 text-stone-800" />
               {label}
             </button>
           ))}
         </div>
-        <div className="flex-1 overflow-y-auto">
-          <ul>
-            {links.map(({ label, icon: Icon }) => (
-              <li key={label}>
-                <button
-                  type="button"
-                  onClick={() => notify(`「${label}」為示意功能`)}
-                  className="flex w-full items-center gap-3 px-5 py-3 text-[15px] hover:bg-claude-sand/40"
-                >
-                  <Icon className="size-5 text-stone-500" />
-                  <span className="flex-1 text-left">{label}</span>
-                  <ChevronRight className="size-4 text-stone-300" />
-                </button>
-              </li>
-            ))}
-          </ul>
-          {room.type === "group" && (
-            <section className="border-t border-claude-sand/70 py-2">
-              <h2 className="px-5 py-2 text-xs font-semibold text-stone-500">
-                成員{room.members ? ` ${room.members.length + 1}` : ""}
-              </h2>
-              <ul>
-                <li className="flex items-center gap-3 px-5 py-2">
-                  <Avatar name={nickname} size={32} />
-                  <span className="truncate text-sm">{nickname}（你）</span>
-                </li>
-                {members.map((name) => (
-                  <li key={name} className="flex items-center gap-3 px-5 py-2">
-                    <Avatar name={name} size={32} />
-                    <span className="truncate text-sm">{name}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </div>
+        {question.status !== "resolved" && (
+          <div className="px-5 pt-4">
+            <button
+              type="button"
+              onClick={onResolve}
+              disabled={!canResolve}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-claude py-3.5 text-lg font-bold text-white disabled:bg-claude-sand disabled:text-stone-400"
+            >
+              <CircleCheckBig className="size-5" />
+              問題解決了
+            </button>
+            {!canResolve && (
+              <p className="mt-1.5 text-center text-[14px] text-stone-500">
+                還沒有人回答，有人回答後就可以按
+              </p>
+            )}
+          </div>
+        )}
+        <dl className="flex-1 overflow-y-auto px-5 py-2">
+          {rows.map(([k, v]) => (
+            <div key={k} className="flex justify-between border-b border-claude-sand/60 py-3 text-[16px]">
+              <dt className="text-stone-500">{k}</dt>
+              <dd className="font-medium text-claude-ink">{v}</dd>
+            </div>
+          ))}
+        </dl>
         <button
           type="button"
-          onClick={onHide}
-          className="border-t border-claude-sand/70 py-4 text-[15px] text-red-500 hover:bg-red-50"
+          onClick={onWithdraw}
+          className="border-t border-claude-sand/70 py-4 text-[17px] text-red-600 hover:bg-red-50"
         >
-          隱藏聊天室
+          撤回問題
         </button>
       </aside>
+    </div>
+  );
+}
+
+function ConfirmDialog({
+  title,
+  quote,
+  body,
+  confirmLabel,
+  danger,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  /** 引用的內容，例如被選中的那則回答 */
+  quote?: string;
+  body: string;
+  confirmLabel: string;
+  danger?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-6 animate-in fade-in">
+      <div
+        role="alertdialog"
+        aria-label={title}
+        className="w-full max-w-sm rounded-2xl bg-claude-ivory p-5 shadow-xl animate-in zoom-in-95"
+      >
+        <h2 className="text-center text-[19px] leading-snug font-bold">{title}</h2>
+        {quote && (
+          <p className="mt-3 line-clamp-4 rounded-xl bg-white px-3 py-2 text-[17px] text-claude-ink ring-1 ring-claude-sand">
+            {quote}
+          </p>
+        )}
+        <p className="mt-2 text-center text-[16px] text-stone-700">{body}</p>
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="min-h-12 rounded-xl bg-claude-sand py-3 text-[17px] font-medium text-stone-800"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className={cn(
+              "min-h-12 rounded-xl py-3 text-[17px] font-bold text-white",
+              danger ? "bg-red-600" : "bg-claude-dark",
+            )}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

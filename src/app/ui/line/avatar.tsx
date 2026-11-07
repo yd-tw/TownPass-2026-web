@@ -1,5 +1,7 @@
+import { Mic, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { RoomType } from "./types";
+import type { CategoryId, QuestionSummary } from "./api/types";
+import { CATEGORY_STYLE } from "./categories";
 
 // Claude 品牌色及其深淺變化
 const PALETTE = [
@@ -21,19 +23,16 @@ function hash(s: string) {
   return Math.abs(h);
 }
 
+/** 人的頭像：名字第一個字＋依名字固定的顏色 */
 export function Avatar({
   name,
-  type,
   size = 44,
   className,
 }: {
   name: string;
-  type?: RoomType;
   size?: number;
   className?: string;
 }) {
-  const bg =
-    type === "official" ? "#141413" : PALETTE[hash(name) % PALETTE.length];
   const initial = Array.from(name.trim())[0] ?? "?";
   return (
     <span
@@ -45,11 +44,74 @@ export function Avatar({
       style={{
         width: size,
         height: size,
-        background: bg,
+        background: PALETTE[hash(name) % PALETTE.length],
         fontSize: Math.round(size * 0.42),
       }}
     >
       {initial}
     </span>
   );
+}
+
+/** 問題（群組）的頭像：有選分類就用分類圖示，否則是依問題固定顏色的群組圖示 */
+export function CategoryAvatar({
+  category,
+  seed,
+  size = 52,
+}: {
+  category: CategoryId;
+  seed: string;
+  size?: number;
+}) {
+  const style =
+    category === "other"
+      ? { icon: Users, color: PALETTE[hash(seed) % PALETTE.length] }
+      : CATEGORY_STYLE[category];
+  const { icon: Icon, color } = style;
+  return (
+    <span
+      aria-hidden
+      className="inline-flex shrink-0 items-center justify-center rounded-full text-white"
+      style={{ width: size, height: size, background: color }}
+    >
+      <Icon style={{ width: size * 0.48, height: size * 0.48 }} />
+    </span>
+  );
+}
+
+/**
+ * 列表與選單裡的問題頭像：拍照問的顯示照片縮圖、錄音問的顯示麥克風，
+ * 長輩一眼就認得出是哪一題；其他用分類圖示。
+ */
+export function QuestionAvatar({
+  q,
+  size = 56,
+}: {
+  q: Pick<QuestionSummary, "id" | "category" | "thumbnail_url" | "has_audio">;
+  size?: number;
+}) {
+  if (q.thumbnail_url) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={q.thumbnail_url}
+        alt=""
+        aria-hidden
+        className="shrink-0 rounded-full bg-claude-sand object-cover"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  if (q.has_audio) {
+    return (
+      <span
+        aria-hidden
+        className="inline-flex shrink-0 items-center justify-center rounded-full bg-claude text-white"
+        style={{ width: size, height: size }}
+      >
+        <Mic style={{ width: size * 0.48, height: size * 0.48 }} />
+      </span>
+    );
+  }
+  return <CategoryAvatar category={q.category} seed={q.id} size={size} />;
 }

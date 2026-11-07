@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import LineApp from "@/app/ui/line/line-app";
 
 export const metadata: Metadata = {
-  title: "LINE 風格聊天室",
-  description: "仿 LINE 手機版的聊天列表與聊天室，透過 socket.io 即時聊天",
+  title: "我要發問",
+  description: "發問者用的 LINE 風格介面：只看得到自己的問題，可以打字、拍照或錄音發問",
 };
 
 export default function ChatPage() {

@@ -1,27 +1,21 @@
 "use client";
 
 import {
-  Clapperboard,
   House,
   MessageCircle,
-  Newspaper,
+  MessageCircleQuestion,
   Pencil,
-  Settings,
-  Wallet,
   type LucideIcon,
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { cn } from "@/lib/utils";
+import type { Me } from "./api/types";
 import { Avatar } from "./avatar";
-import { IconButton } from "./chat-list";
-import type { Room, Status, Tab } from "./types";
+import type { Tab } from "./types";
 
 const NAV: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "home", label: "主頁", icon: House },
   { id: "chats", label: "聊天", icon: MessageCircle },
-  { id: "voom", label: "VOOM", icon: Clapperboard },
-  { id: "news", label: "新聞", icon: Newspaper },
-  { id: "wallet", label: "錢包", icon: Wallet },
 ];
 
 export function BottomNav({
@@ -34,7 +28,7 @@ export function BottomNav({
   onChange: (tab: Tab) => void;
 }) {
   return (
-    <nav className="grid shrink-0 grid-cols-5 border-t border-claude-sand bg-claude-ivory pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
+    <nav className="grid shrink-0 grid-cols-2 border-t border-claude-sand bg-claude-ivory pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
       {NAV.map(({ id, label, icon: Icon }) => {
         const active = tab === id;
         return (
@@ -44,18 +38,18 @@ export function BottomNav({
             onClick={() => onChange(id)}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "relative flex flex-col items-center gap-0.5 text-[10px]",
-              active ? "font-semibold text-stone-900" : "text-stone-400",
+              "relative flex min-h-14 flex-col items-center justify-center gap-0.5 text-[14px]",
+              active ? "font-bold text-stone-900" : "text-stone-500",
             )}
           >
             <Icon
-              className="size-6"
+              className="size-7"
               strokeWidth={active ? 2.4 : 1.8}
               fill={active && id === "chats" ? "currentColor" : "none"}
             />
             {label}
             {id === "chats" && unread > 0 && (
-              <span className="absolute -top-0.5 left-1/2 ml-1.5 min-w-4.5 rounded-full bg-claude px-1 text-center text-[10px] leading-4.5 font-semibold text-white">
+              <span className="absolute top-0 left-1/2 ml-2 min-w-5.5 rounded-full bg-claude-dark px-1 text-center text-[12px] leading-5.5 font-bold text-white">
                 {unread > 99 ? "99+" : unread}
               </span>
             )}
@@ -67,37 +61,35 @@ export function BottomNav({
 }
 
 export function HomeTab({
-  nickname,
+  me,
+  stats,
   onNicknameChange,
-  status,
-  rooms,
-  onOpen,
+  onAsk,
+  onShowChats,
 }: {
-  nickname: string;
-  onNicknameChange: (name: string) => void;
-  status: Status;
-  rooms: Room[];
-  onOpen: (id: string) => void;
+  me: Me | null;
+  stats: { total: number; waiting: number; resolved: number };
+  onNicknameChange: (name: string) => Promise<boolean>;
+  onAsk: () => void;
+  onShowChats: () => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(nickname);
-  const friends = rooms.filter((r) => r.type === "friend" && !r.hidden);
-  const groups = rooms.filter((r) => r.type === "group" && !r.hidden);
+  const [draft, setDraft] = useState("");
+  const nickname = me?.nickname ?? "…";
 
-  function save(e: FormEvent) {
+  async function save(e: FormEvent) {
     e.preventDefault();
     const trimmed = draft.trim();
-    if (trimmed) onNicknameChange(trimmed);
+    if (trimmed && trimmed !== nickname) {
+      if (!(await onNicknameChange(trimmed))) return;
+    }
     setEditing(false);
   }
 
   return (
     <div className="flex h-full flex-col bg-claude-ivory">
-      <header className="flex items-center justify-between px-4 pt-4 pb-2">
-        <h1 className="text-[22px] font-bold tracking-tight">主頁</h1>
-        <IconButton label="設定">
-          <Settings className="size-6" />
-        </IconButton>
+      <header className="px-4 pt-4 pb-2">
+        <h1 className="text-[24px] font-bold tracking-tight">主頁</h1>
       </header>
       <div className="flex-1 overflow-y-auto">
         <section className="flex items-center gap-4 px-4 py-4">
@@ -108,10 +100,10 @@ export function HomeTab({
                 <input
                   autoFocus
                   value={draft}
-                  maxLength={20}
+                  maxLength={30}
                   onChange={(e) => setDraft(e.target.value)}
                   onBlur={save}
-                  className="min-w-0 flex-1 rounded-md border border-claude-sand px-2 py-1 text-base outline-none focus:border-claude"
+                  className="h-11 min-w-0 flex-1 rounded-lg border border-claude-sand px-3 text-[18px] outline-none focus:border-claude"
                 />
               </form>
             ) : (
@@ -121,87 +113,57 @@ export function HomeTab({
                   setDraft(nickname);
                   setEditing(true);
                 }}
-                className="flex max-w-full items-center gap-1.5 text-lg font-bold"
+                className="flex min-h-11 max-w-full items-center gap-1.5 text-[20px] font-bold"
               >
                 <span className="truncate">{nickname}</span>
-                <Pencil className="size-4 shrink-0 text-stone-400" />
+                <Pencil className="size-5 shrink-0 text-stone-500" />
               </button>
             )}
-            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-stone-500">
-              <span
-                className={cn(
-                  "size-2 rounded-full",
-                  status === "connected"
-                    ? "bg-claude-green"
-                    : status === "connecting"
-                      ? "bg-claude"
-                      : "bg-red-500",
-                )}
-              />
-              {status === "connected"
-                ? "已連線，其他人會看到這個暱稱"
-                : status === "connecting"
-                  ? "連線中…"
-                  : "已離線"}
+            <p className="mt-0.5 text-[14px] text-stone-600">
+              回答您的人會看到這個暱稱，點名字可以修改
             </p>
           </div>
         </section>
-        <RoomSection title="群組" rooms={groups} onOpen={onOpen} />
-        <RoomSection title="好友" rooms={friends} onOpen={onOpen} />
-      </div>
-    </div>
-  );
-}
 
-function RoomSection({
-  title,
-  rooms,
-  onOpen,
-}: {
-  title: string;
-  rooms: Room[];
-  onOpen: (id: string) => void;
-}) {
-  if (rooms.length === 0) return null;
-  return (
-    <section className="border-t border-claude-sand/70 py-2">
-      <h2 className="px-4 py-2 text-xs font-semibold text-stone-500">
-        {title} {rooms.length}
-      </h2>
-      <ul>
-        {rooms.map((r) => (
-          <li key={r.id}>
+        <section className="mx-4 grid grid-cols-3 overflow-hidden rounded-2xl border border-claude-sand bg-white">
+          {(
+            [
+              ["我的問題", stats.total],
+              ["等待回答", stats.waiting],
+              ["已解決", stats.resolved],
+            ] as const
+          ).map(([label, value]) => (
             <button
+              key={label}
               type="button"
-              onClick={() => onOpen(r.id)}
-              className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-claude-sand/40"
+              onClick={onShowChats}
+              className="flex flex-col items-center gap-0.5 py-4 not-last:border-r not-last:border-claude-sand"
             >
-              <Avatar name={r.name} type={r.type} size={40} />
-              <div className="min-w-0">
-                <p className="truncate text-[15px] font-medium">{r.name}</p>
-                {r.status && (
-                  <p className="truncate text-xs text-stone-500">{r.status}</p>
-                )}
-              </div>
+              <span className="text-[28px] font-bold text-claude-ink">{value}</span>
+              <span className="text-[15px] text-stone-600">{label}</span>
             </button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
+          ))}
+        </section>
 
-export function PlaceholderTab({ tab }: { tab: Tab }) {
-  const item = NAV.find((n) => n.id === tab) ?? NAV[0];
-  const Icon = item.icon;
-  return (
-    <div className="flex h-full flex-col bg-claude-ivory">
-      <header className="px-4 pt-4 pb-2">
-        <h1 className="text-[22px] font-bold tracking-tight">{item.label}</h1>
-      </header>
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-stone-400">
-        <Icon className="size-12" strokeWidth={1.4} />
-        <p className="text-sm">這個分頁只是示意，尚未實作</p>
+        <section className="px-4 py-6">
+          <button
+            type="button"
+            onClick={onAsk}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-claude py-5 text-[22px] font-bold text-white shadow-sm active:bg-claude-dark"
+          >
+            <MessageCircleQuestion className="size-7" />
+            我要發問
+          </button>
+          <p className="mt-3 text-center text-[16px] leading-relaxed text-stone-600">
+            看不懂的公文、不確定是不是詐騙、不知道怎麼走，
+            <br />
+            都可以打字、拍照或錄音問大家。
+          </p>
+        </section>
+
+        <p className="px-4 pb-6 text-center text-[13px] text-stone-500">
+          示範模式：資料只存在這個分頁，重新整理就會重置
+        </p>
       </div>
     </div>
   );

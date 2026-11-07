@@ -1,0 +1,167 @@
+/**
+ * 後端 API 的資料結構，欄位名稱與 api-spec.md 一致。
+ * 只放發問者畫面用得到的部分。
+ */
+
+export type CategoryId =
+  | "map_navigation"
+  | "admin_procedure"
+  | "document_contract"
+  | "scam_check"
+  | "app_usage"
+  | "language"
+  | "other";
+
+export type QuestionStatus = "open" | "in_progress" | "resolved";
+export type AssistanceMode = "online" | "onsite" | "either";
+export type AssistStatus = "claimed" | "arrived" | "completed" | "cancelled";
+export type LocationSharing = "off" | "approximate" | "exact";
+
+export type PublicUser = {
+  id: string;
+  nickname: string;
+  points: number;
+};
+
+export type Me = PublicUser & {
+  languages: string[];
+  nearby_notifications_enabled: boolean;
+  nearby_radius_m: number;
+  location_sharing: LocationSharing;
+};
+
+export type Media = {
+  id: string;
+  kind: "image" | "audio";
+  url: string;
+  width?: number;
+  height?: number;
+  duration_seconds?: number;
+};
+
+/** 因個資標記待決定而暫時隱藏的內容 */
+export type HiddenPart = {
+  part: "body" | "media";
+  media_id?: string;
+  reason: "pii_pending";
+};
+
+export type QuestionSummary = {
+  id: string;
+  status: QuestionStatus;
+  /** 內容待個資確認時為 null */
+  title: string | null;
+  category: CategoryId;
+  language: string;
+  assistance_mode: AssistanceMode;
+  location_sharing: LocationSharing;
+  author: PublicUser;
+  context: null;
+  area: null;
+  thumbnail_url: string | null;
+  has_audio?: boolean;
+  answer_count: number;
+  reward_points: number;
+  can_claim: boolean;
+  hidden_parts: HiddenPart[];
+  created_at: string;
+};
+
+export type QuestionDetail = QuestionSummary & {
+  body: string | null;
+  media: Media[];
+  is_author: boolean;
+  accepted_answer_id: string | null;
+  assist_status: AssistStatus | null;
+};
+
+export type VoteSummary = {
+  upvotes: number;
+  my_vote: 1 | -1 | null;
+};
+
+export type Answer = {
+  id: string;
+  question_id: string;
+  author: PublicUser;
+  body: string | null;
+  media: Media[];
+  language?: string;
+  is_accepted: boolean;
+  votes: VoteSummary;
+  hidden_parts: HiddenPart[];
+  created_at: string;
+};
+
+export type CreateQuestionRequest = {
+  title?: string;
+  body?: string;
+  media_ids?: string[];
+  language: string;
+  category: CategoryId;
+  assistance_mode: AssistanceMode;
+  location_sharing?: LocationSharing;
+  client_request_id: string;
+};
+
+export type CreateAnswerRequest = {
+  body?: string;
+  media_ids?: string[];
+  language?: string;
+  client_request_id?: string;
+};
+
+export type Meta = {
+  categories: { id: CategoryId; label: string }[];
+  languages: string[];
+  points: { answer_accepted: number; assist_completed: number };
+  limits: {
+    question_body_max_chars: number;
+    media_per_post_max: number;
+    image_max_bytes: number;
+    audio_max_bytes: number;
+    audio_max_seconds: number;
+  };
+};
+
+/** Socket.IO 只送「有更新」的訊號，前端收到後再用 REST 重抓 */
+export type Signal =
+  | { type: "feed.changed" }
+  | { type: "question.changed"; question_id: string }
+  | { type: "answers.changed"; question_id: string };
+
+/** 發問者畫面需要的 API；之後換成真的後端只要實作同一個介面 */
+export type AskerApi = {
+  getMeta(): Promise<Meta>;
+  getMe(): Promise<Me>;
+  updateMe(patch: { nickname?: string }): Promise<Me>;
+  /** GET /questions?author=me */
+  listMyQuestions(): Promise<QuestionSummary[]>;
+  getQuestion(id: string): Promise<QuestionDetail>;
+  createQuestion(req: CreateQuestionRequest): Promise<QuestionDetail>;
+  deleteQuestion(id: string): Promise<void>;
+  /** GET /questions/{id}/answers?sort=oldest（聊天室依時間排列） */
+  listAnswers(questionId: string): Promise<Answer[]>;
+  createAnswer(questionId: string, req: CreateAnswerRequest): Promise<Answer>;
+  deleteAnswer(answerId: string): Promise<void>;
+  acceptAnswer(answerId: string): Promise<Answer>;
+  vote(answerId: string, value: 1 | -1): Promise<VoteSummary>;
+  unvote(answerId: string): Promise<VoteSummary>;
+  uploadMedia(
+    file: Blob,
+    kind: "image" | "audio",
+    durationSeconds?: number,
+  ): Promise<Media>;
+  /** 對應 Socket.IO 的 answers.changed 等訊號 */
+  subscribe(listener: (signal: Signal) => void): () => void;
+};
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    public code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}

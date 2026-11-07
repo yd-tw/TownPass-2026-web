@@ -144,6 +144,8 @@
   --color-claude-ivory: #faf9f5;
   --color-claude-cream: #f0eee6;
   --color-claude-sand: #e8e6dc;
+  /* 自己的泡泡：淺橘底配深色字（對比約 11:1） */
+  --color-claude-peach: #f3cbb6;
   --color-claude-gray: #b0aea5;
   --color-claude-blue: #6a9bcc;
   --color-claude-green: #788c5d;

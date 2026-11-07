@@ -3,24 +3,30 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
-import { ChatList, type ChatListActions } from "./chat-list";
+import { createMockApi } from "./api/mock-api";
+import {
+  ApiError,
+  type Answer,
+  type CategoryId,
+  type Me,
+  type QuestionDetail,
+  type QuestionSummary,
+} from "./api/types";
+import { AskSheet, ChatList, type ChatListActions } from "./chat-list";
 import { ChatRoom } from "./chat-room";
-import { BottomNav, HomeTab, PlaceholderTab } from "./other-tabs";
-import { buildSamples } from "./sample-data";
-import type { Message, ReplyRef, Room, Tab } from "./types";
-import { useChatSocket, type Emit, type SocketEvent } from "./use-chat-socket";
+import { BottomNav, HomeTab } from "./other-tabs";
+import { unreadCount, type Notify, type Outgoing, type QuestionPrefs, type Tab } from "./types";
 
 const NICK_KEY = "line-demo-nickname";
-const MAX_LENGTH = 500;
 
 const noopSubscribe = () => () => {};
 
 /**
- * LINE 風格的聊天 App。
+ * 發問者用的 LINE 風格畫面：只看得到自己問的問題，每個問題是一個聊天室。
  * 範例資料的時間是相對於「現在」產生的，而 Cache Components 會預先渲染
  * Client Component，所以整個 App 只在瀏覽器端掛載，伺服器端只輸出外框。
  */
@@ -64,32 +70,85 @@ function readNickname() {
   return `訪客${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
-function parseReply(value: unknown): ReplyRef | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const r = value as Record<string, unknown>;
-  if (typeof r.name !== "string" || typeof r.text !== "string") return undefined;
-  return {
-    key: typeof r.key === "string" ? r.key.slice(0, 64) : "",
-    name: r.name.slice(0, 20),
-    text: r.text.slice(0, 120),
-  };
+/** 把 API 錯誤碼換成長輩看得懂的句子 */
+function errorMessage(e: unknown) {
+  if (e instanceof ApiError) {
+    switch (e.code) {
+      case "NOT_FOUND":
+        return "這個問題已經撤回或不存在";
+      case "ALREADY_ACCEPTED":
+        return "這個問題已經採納過回答了";
+      case "ANSWER_ACCEPTED":
+        return "已採納的回答不能刪除";
+      case "SELF_ACTION_NOT_ALLOWED":
+        return "不能對自己的回答這樣做";
+      case "RATE_LIMITED":
+        return "傳得太快了，請稍等一下再試";
+      default:
+        return e.message;
+    }
+  }
+  return "連線失敗，請稍後再試";
 }
 
+const newPrefs = (lastSeenAt: string): QuestionPrefs => ({
+  pinned: false,
+  muted: false,
+  lastSeenAt,
+});
+
+/** 沒打字、只傳照片或語音的問題，標題帶上日期時間才分得出來 */
+function mediaTitle(kind: "images" | "audio") {
+  const d = new Date();
+  const clock = new Intl.DateTimeFormat("zh-TW", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+  return `${d.getMonth() + 1}/${d.getDate()} ${clock} 的${kind === "audio" ? "語音" : "照片"}提問`;
+}
+
+/** key 在新問題送出後保持不變，聊天室才不會重新播放進場動畫 */
+type Active = {
+  key: string;
+  id: string | null;
+  category: CategoryId;
+  marker: string | null;
+};
+
 function LineAppInner() {
-  const [initial] = useState(() => buildSamples(Date.now()));
-  const [rooms, setRooms] = useState<Room[]>(initial.rooms);
-  const [messages, setMessages] = useState<Record<string, Message[]>>(
-    initial.messages,
+  // 網址加上 ?demo=crowd 可模擬發問後有 50～100 位志工回答
+  const [api] = useState(() =>
+    createMockApi(readNickname(), {
+      crowd: new URLSearchParams(window.location.search).get("demo") === "crowd",
+    }),
   );
+  const [me, setMe] = useState<Me | null>(null);
+  const [questions, setQuestions] = useState<QuestionSummary[]>([]);
+  const [details, setDetails] = useState<Record<string, QuestionDetail>>({});
+  const [answers, setAnswers] = useState<Record<string, Answer[]>>({});
+  const [prefs, setPrefs] = useState<Record<string, QuestionPrefs>>({});
+  const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(() => Date.now());
   const [tab, setTab] = useState<Tab>("chats");
-  const [active, setActive] = useState<{
-    id: string;
-    marker: string | null;
+  const [active, setActive] = useState<Active | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [toast, setToast] = useState<{
+    text: string;
+    tone: "info" | "error";
+    id: number;
   } | null>(null);
-  const [nickname, setNickname] = useState(readNickname);
-  const [toast, setToast] = useState<{ text: string; id: number } | null>(
-    null,
+
+  // socket 訊號的處理函式需要讀到最新狀態
+  const latest = useRef({ me, prefs, questions, activeId: active?.id ?? null });
+  useEffect(() => {
+    latest.current = { me, prefs, questions, activeId: active?.id ?? null };
+  });
+
+  const notify: Notify = useCallback(
+    (text, tone = "info") => setToast({ text, tone, id: Date.now() }),
+    [],
   );
 
   useEffect(() => {
@@ -97,332 +156,368 @@ function LineAppInner() {
     return () => window.clearInterval(timer);
   }, []);
 
+  // 一般提示 4 秒後消失；錯誤要等長輩按「知道了」
   useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 1800);
+    if (!toast || toast.tone === "error") return;
+    const timer = window.setTimeout(() => setToast(null), 4000);
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const notify = useCallback(
-    (text: string) => setToast({ text, id: Date.now() }),
-    [],
+  // ---- 從 API 載入 ----
+  const loadAnswers = useCallback(
+    async (id: string) => {
+      const list = await api.listAnswers(id);
+      setAnswers((prev) => ({ ...prev, [id]: list }));
+      return list;
+    },
+    [api],
   );
 
-  const roomKey = rooms.map((r) => r.id).join("\n");
-  const roomIds = useMemo(() => roomKey.split("\n"), [roomKey]);
+  const loadQuestion = useCallback(
+    async (id: string) => {
+      const detail = await api.getQuestion(id);
+      setDetails((prev) => ({ ...prev, [id]: detail }));
+      return detail;
+    },
+    [api],
+  );
 
-  const updateRoom = (id: string, patch: (r: Room) => Partial<Room>) =>
-    setRooms((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, ...patch(r) } : r)),
+  const loadSummaries = useCallback(async () => {
+    const list = await api.listMyQuestions();
+    setQuestions(list);
+    return list;
+  }, [api]);
+
+  const loadAll = useCallback(async () => {
+    const list = await loadSummaries();
+    const rows = await Promise.all(
+      list.map(async (q) => {
+        const [detail, ans] = await Promise.all([
+          api.getQuestion(q.id),
+          api.listAnswers(q.id),
+        ]);
+        return { q, detail, ans };
+      }),
     );
-
-  const updateMessages = (
-    roomId: string,
-    fn: (list: Message[]) => Message[],
-  ) =>
-    setMessages((prev) => ({ ...prev, [roomId]: fn(prev[roomId] ?? []) }));
-
-  function handleEvent(e: SocketEvent, emitNow: Emit) {
-    const roomId = typeof e.room === "string" ? e.room : null;
-    if (!roomId || !rooms.some((r) => r.id === roomId)) return;
-    const sender = typeof e.id === "string" ? e.id : "unknown";
-    const kind = e.kind ?? "text";
-
-    if (kind === "read") {
-      const targets = new Set(
-        Array.isArray(e.targets)
-          ? e.targets.filter((t): t is string => typeof t === "string")
-          : [],
-      );
-      if (targets.size === 0) return;
-      updateMessages(roomId, (list) =>
-        list.map((m) =>
-          m.self && targets.has(m.key) && !m.readBy.includes(sender)
-            ? { ...m, readBy: [...m.readBy, sender] }
-            : m,
-        ),
-      );
-      return;
-    }
-
-    if (kind === "unsend") {
-      const target = e.target;
-      if (typeof target !== "string") return;
-      updateMessages(roomId, (list) =>
-        list.map((m) =>
-          m.key === target && m.senderId === sender ? { ...m, unsent: true } : m,
-        ),
-      );
-      return;
-    }
-
-    if (kind !== "text" && kind !== "sticker") return;
-    const text = typeof e.text === "string" ? e.text.trim().slice(0, MAX_LENGTH) : "";
-    if (!text) return;
-    const at = typeof e.at === "number" ? e.at : Date.now();
-    const key =
-      typeof e.cid === "string" && e.cid && e.cid.length <= 64
-        ? e.cid
-        : `${sender}-${at}`;
-    if ((messages[roomId] ?? []).some((m) => m.key === key)) return;
-
-    const isActive = active?.id === roomId;
-    const name =
-      typeof e.name === "string" && e.name.trim()
-        ? e.name.trim().slice(0, 20)
-        : "訪客";
-    updateMessages(roomId, (list) => [
-      ...list,
-      {
-        key,
-        roomId,
-        kind,
-        self: false,
-        senderId: sender,
-        senderName: name,
-        text,
-        at,
-        readBy: [],
-        replyTo: parseReply(e.replyTo),
-        live: true,
-        readSent: isActive,
-      },
-    ]);
-    // 收到新訊息時，被隱藏的聊天室會重新出現（跟 LINE 一樣）
-    updateRoom(roomId, (r) => ({
-      hidden: false,
-      unread: isActive ? r.unread : r.unread + 1,
+    setDetails((prev) => ({
+      ...prev,
+      ...Object.fromEntries(rows.map((r) => [r.q.id, r.detail])),
     }));
-    if (isActive) emitNow({ room: roomId, kind: "read", targets: [key] });
-  }
-
-  const { status, emit } = useChatSocket(roomIds, handleEvent);
-
-  /** 對還沒回報已讀的即時訊息送出已讀 */
-  function sendRead(roomId: string) {
-    const pending = (messages[roomId] ?? [])
-      .filter((m) => !m.self && m.live && !m.readSent)
-      .map((m) => m.key);
-    if (pending.length === 0) return;
-    if (emit({ room: roomId, kind: "read", targets: pending })) {
-      const set = new Set(pending);
-      updateMessages(roomId, (list) =>
-        list.map((m) => (set.has(m.key) ? { ...m, readSent: true } : m)),
-      );
-    }
-  }
-
-  function openRoom(id: string) {
-    const room = rooms.find((r) => r.id === id);
-    if (!room) return;
-    const list = messages[id] ?? [];
-    const marker =
-      room.unread > 0
-        ? (list[Math.max(0, list.length - room.unread)]?.key ?? null)
-        : null;
-    setActive({ id, marker });
-    updateRoom(id, () => ({ unread: 0, hidden: false }));
-    sendRead(id);
-  }
-
-  function send(
-    roomId: string,
-    kind: "text" | "sticker",
-    text: string,
-    replyTo?: ReplyRef,
-  ) {
-    const key = makeId();
-    const ok = emit({ room: roomId, cid: key, name: nickname, kind, text, replyTo });
-    updateMessages(roomId, (list) => [
-      ...list,
-      {
-        key,
-        roomId,
-        kind,
-        self: true,
-        senderId: "me",
-        senderName: nickname,
-        text,
-        at: Date.now(),
-        readBy: [],
-        replyTo,
-        failed: !ok,
-      },
-    ]);
-    if (!ok) notify("目前離線，訊息未送出");
-  }
-
-  function retry(roomId: string, key: string) {
-    const m = (messages[roomId] ?? []).find((x) => x.key === key);
-    if (!m || m.kind === "system" || m.kind === "image") return;
-    const ok = emit({
-      room: roomId,
-      cid: m.key,
-      name: nickname,
-      kind: m.kind,
-      text: m.text,
-      replyTo: m.replyTo,
+    setAnswers((prev) => ({
+      ...prev,
+      ...Object.fromEntries(rows.map((r) => [r.q.id, r.ans])),
+    }));
+    setPrefs((prev) => {
+      const next = { ...prev };
+      for (const { q } of rows) {
+        // 第一次看到的問題：已解決的視為都看過，其他的回答都算未讀
+        next[q.id] ??= newPrefs(
+          q.status === "resolved" ? new Date().toISOString() : q.created_at,
+        );
+      }
+      return next;
     });
-    if (!ok) {
-      notify("仍然離線，請稍後再試");
-      return;
-    }
-    updateMessages(roomId, (list) =>
-      list.map((x) =>
-        x.key === key ? { ...x, failed: false, at: Date.now() } : x,
-      ),
+  }, [api, loadSummaries]);
+
+  const markSeen = useCallback((id: string) => {
+    setPrefs((prev) => ({
+      ...prev,
+      [id]: {
+        ...(prev[id] ?? newPrefs("")),
+        lastSeenAt: new Date().toISOString(),
+      },
+    }));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    // 在 then 裡才開始載入：資料回來後才 setState，不是在 effect 本體同步呼叫
+    Promise.resolve()
+      .then(() => Promise.all([api.getMe(), loadAll()]))
+      .then(([m]) => {
+        if (!cancelled) setMe(m);
+      })
+      .catch((e) => {
+        if (!cancelled) notify(errorMessage(e), "error");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, loadAll, notify]);
+
+  // ---- 即時訊號：收到後用 REST 重抓（同 api-spec.md 的做法） ----
+  useEffect(
+    () =>
+      api.subscribe(async (signal) => {
+        try {
+          if (signal.type === "feed.changed") {
+            await loadAll();
+            return;
+          }
+          const id = signal.question_id;
+          if (signal.type === "question.changed") {
+            await Promise.all([loadQuestion(id), loadSummaries()]);
+            return;
+          }
+          const [list] = await Promise.all([loadAnswers(id), loadSummaries()]);
+          const { me: currentMe, prefs: currentPrefs, activeId } = latest.current;
+          if (activeId === id) {
+            markSeen(id);
+            return;
+          }
+          const last = list.at(-1);
+          const p = currentPrefs[id];
+          if (
+            last &&
+            last.author.id !== currentMe?.id &&
+            p &&
+            last.created_at > p.lastSeenAt
+          ) {
+            if (!p.muted) notify(`${last.author.nickname} 回答了您的問題`);
+          }
+        } catch {
+          // 問題已被撤回（404）等情況：下次載入列表時會修正
+        }
+      }),
+    [api, loadAll, loadAnswers, loadQuestion, loadSummaries, markSeen, notify],
+  );
+
+  // ---- 動作 ----
+  function openQuestion(id: string) {
+    const detail = details[id];
+    const summary = questions.find((q) => q.id === id);
+    const category = detail?.category ?? summary?.category;
+    if (!category) return;
+    const p = prefs[id];
+    const firstUnread = (answers[id] ?? []).find(
+      (a) => a.author.id !== me?.id && p && a.created_at > p.lastSeenAt,
     );
+    setActive({ key: id, id, category, marker: firstUnread?.id ?? null });
+    markSeen(id);
+    loadQuestion(id).catch((e) => notify(errorMessage(e), "error"));
   }
 
-  function unsend(roomId: string, key: string) {
-    if (!emit({ room: roomId, kind: "unsend", target: key })) {
-      notify("離線時無法收回訊息");
-      return;
-    }
-    updateMessages(roomId, (list) =>
-      list.map((m) => (m.key === key ? { ...m, unsent: true } : m)),
-    );
+  function startDraft(category: CategoryId) {
+    setPicking(false);
+    setTab("chats");
+    setActive({ key: makeId(), id: null, category, marker: null });
   }
 
-  function changeNickname(name: string) {
-    setNickname(name);
+  async function send(out: Outgoing) {
+    if (!active || sending) return false;
+    setSending(true);
     try {
-      localStorage.setItem(NICK_KEY, name);
-    } catch {
-      // 忽略：只是記住暱稱的便利功能
+      let body: string | undefined;
+      const mediaIds: string[] = [];
+      if (out.kind === "text") {
+        body = out.text;
+      } else if (out.kind === "images") {
+        // 規格：圖片要先在手機端遮蔽個資才上傳（尚未實作遮蔽工具）
+        for (const file of out.files) {
+          mediaIds.push((await api.uploadMedia(file, "image")).id);
+        }
+      } else {
+        mediaIds.push((await api.uploadMedia(out.blob, "audio", out.duration)).id);
+      }
+
+      if (active.id === null) {
+        const q = await api.createQuestion({
+          title: body ? undefined : mediaTitle(out.kind === "audio" ? "audio" : "images"),
+          body,
+          media_ids: mediaIds,
+          language: "zh-TW",
+          category: active.category,
+          assistance_mode: "online",
+          location_sharing: "off",
+          client_request_id: makeId(),
+        });
+        setDetails((prev) => ({ ...prev, [q.id]: q }));
+        setAnswers((prev) => ({ ...prev, [q.id]: [] }));
+        setPrefs((prev) => ({ ...prev, [q.id]: newPrefs(q.created_at) }));
+        setActive((a) => (a ? { ...a, id: q.id } : a));
+        await loadSummaries();
+        notify("問題已送出，有人回答時會通知您");
+      } else {
+        await api.createAnswer(active.id, {
+          body,
+          media_ids: mediaIds,
+          language: "zh-TW",
+          client_request_id: makeId(),
+        });
+        await loadAnswers(active.id);
+        markSeen(active.id);
+      }
+      return true;
+    } catch (e) {
+      notify(errorMessage(e), "error");
+      return false;
+    } finally {
+      setSending(false);
     }
   }
+
+  async function accept(a: Answer) {
+    try {
+      await api.acceptAnswer(a.id);
+      await Promise.all([
+        loadQuestion(a.question_id),
+        loadAnswers(a.question_id),
+        loadSummaries(),
+      ]);
+      notify("太好了！問題已標示為解決");
+    } catch (e) {
+      notify(errorMessage(e), "error");
+    }
+  }
+
+  async function deleteAnswer(a: Answer) {
+    try {
+      await api.deleteAnswer(a.id);
+      await loadAnswers(a.question_id);
+    } catch (e) {
+      notify(errorMessage(e), "error");
+    }
+  }
+
+  async function withdraw(id: string) {
+    try {
+      await api.deleteQuestion(id);
+      setActive(null);
+      setQuestions((prev) => prev.filter((q) => q.id !== id));
+      notify("已撤回問題");
+    } catch (e) {
+      notify(errorMessage(e), "error");
+    }
+  }
+
+  async function changeNickname(name: string) {
+    try {
+      setMe(await api.updateMe({ nickname: name }));
+      try {
+        localStorage.setItem(NICK_KEY, name);
+      } catch {
+        // 忽略：只是記住暱稱的便利功能
+      }
+      await loadAll();
+      return true;
+    } catch (e) {
+      notify(errorMessage(e), "error");
+      return false;
+    }
+  }
+
+  const updatePrefs = (id: string, patch: (p: QuestionPrefs) => Partial<QuestionPrefs>) =>
+    setPrefs((prev) => {
+      const p = prev[id] ?? newPrefs(new Date().toISOString());
+      return { ...prev, [id]: { ...p, ...patch(p) } };
+    });
 
   const listActions: ChatListActions = {
-    onOpen: openRoom,
-    onTogglePin: (id) => updateRoom(id, (r) => ({ pinned: !r.pinned })),
-    onToggleMute: (id) => updateRoom(id, (r) => ({ muted: !r.muted })),
-    onMarkRead: (id) => {
-      updateRoom(id, () => ({ unread: 0 }));
-      sendRead(id);
-    },
-    onHide: (id) => {
-      updateRoom(id, () => ({ hidden: true }));
-      notify("已隱藏聊天室，收到新訊息時會再出現");
-    },
-    onMarkAllRead: () => {
-      setRooms((prev) => prev.map((r) => ({ ...r, unread: 0 })));
-      for (const r of rooms) sendRead(r.id);
-      notify("已將所有聊天標為已讀");
-    },
-    onCreate: (name) => {
-      const id = `line-custom:${name}`;
-      const existing = rooms.find((r) => r.id === id);
-      if (existing) {
-        openRoom(id);
-        return;
-      }
-      const at = Date.now();
-      setRooms((prev) => [
-        ...prev,
-        {
-          id,
-          name,
-          type: "group",
-          status: "輸入相同名稱就能加入這個聊天室",
-          pinned: false,
-          muted: false,
-          hidden: false,
-          unread: 0,
-          createdAt: at,
-        },
-      ]);
-      updateMessages(id, () => [
-        {
-          key: `system-${id}-${at}`,
-          roomId: id,
-          kind: "system",
-          self: true,
-          senderId: "me",
-          senderName: nickname,
-          text: `你建立了聊天室「${name}」\n其他人輸入相同名稱就會加入`,
-          at,
-          readBy: [],
-        },
-      ]);
-      setActive({ id, marker: null });
-    },
+    onOpen: openQuestion,
+    onAsk: () => setPicking(true),
+    onTogglePin: (id) => updatePrefs(id, (p) => ({ pinned: !p.pinned })),
+    onToggleMute: (id) => updatePrefs(id, (p) => ({ muted: !p.muted })),
+    onMarkRead: markSeen,
   };
 
-  const activeRoom = active ? rooms.find((r) => r.id === active.id) : undefined;
-  const totalUnread = rooms.reduce(
-    (sum, r) => sum + (r.hidden ? 0 : r.unread),
-    0,
-  );
+  const meId = me?.id ?? "";
+  const unreadOf = (id: string) => unreadCount(answers[id], meId, prefs[id]?.lastSeenAt);
+  const totalUnread = questions.reduce((sum, q) => sum + unreadOf(q.id), 0);
+  const resolved = questions.filter((q) => q.status === "resolved").length;
+  const activeQuestion = active?.id ? details[active.id] : null;
 
   return (
     <>
       <div className="flex min-h-0 flex-1 flex-col">
         {tab === "chats" ? (
           <ChatList
-            rooms={rooms}
-            messages={messages}
+            questions={questions}
+            answers={answers}
+            prefs={prefs}
+            meId={meId}
             now={now}
-            status={status}
+            loading={loading}
             actions={listActions}
           />
-        ) : tab === "home" ? (
-          <HomeTab
-            nickname={nickname}
-            onNicknameChange={changeNickname}
-            status={status}
-            rooms={rooms}
-            onOpen={openRoom}
-          />
         ) : (
-          <PlaceholderTab tab={tab} />
+          <HomeTab
+            me={me}
+            stats={{
+              total: questions.length,
+              waiting: questions.length - resolved,
+              resolved,
+            }}
+            onNicknameChange={changeNickname}
+            onAsk={() => setPicking(true)}
+            onShowChats={() => setTab("chats")}
+          />
         )}
       </div>
       <BottomNav tab={tab} unread={totalUnread} onChange={setTab} />
 
-      {activeRoom && active && (
+      {picking && (
+        <AskSheet onAsk={startDraft} onClose={() => setPicking(false)} />
+      )}
+
+      {active && (active.id === null || activeQuestion) && (
         <ChatRoom
-          key={activeRoom.id}
-          room={activeRoom}
-          messages={messages[activeRoom.id] ?? []}
+          key={active.key}
+          meId={meId}
+          question={activeQuestion ?? null}
+          category={active.category}
+          answers={active.id ? (answers[active.id] ?? []) : []}
+          prefs={active.id ? (prefs[active.id] ?? null) : null}
           now={now}
-          status={status}
-          nickname={nickname}
-          unreadElsewhere={totalUnread}
+          sending={sending}
+          unreadElsewhere={totalUnread - (active.id ? unreadOf(active.id) : 0)}
           unreadMarkerKey={active.marker}
           onBack={() => setActive(null)}
-          onSend={(kind, text, replyTo) =>
-            send(activeRoom.id, kind, text, replyTo)
-          }
-          onRetry={(key) => retry(activeRoom.id, key)}
-          onUnsend={(key) => unsend(activeRoom.id, key)}
-          onDelete={(key) =>
-            updateMessages(activeRoom.id, (list) =>
-              list.filter((m) => m.key !== key),
-            )
-          }
+          onSend={send}
+          onAccept={accept}
+          onDeleteAnswer={deleteAnswer}
+          onWithdraw={() => (active.id ? withdraw(active.id) : Promise.resolve())}
           onToggleMute={() =>
-            updateRoom(activeRoom.id, (r) => ({ muted: !r.muted }))
+            active.id && updatePrefs(active.id, (p) => ({ muted: !p.muted }))
           }
-          onHide={() => {
-            updateRoom(activeRoom.id, () => ({ hidden: true }));
-            setActive(null);
-          }}
+          onTogglePin={() =>
+            active.id && updatePrefs(active.id, (p) => ({ pinned: !p.pinned }))
+          }
           notify={notify}
         />
       )}
 
-      {toast && (
-        <div
-          key={toast.id}
-          className="pointer-events-none absolute inset-x-0 bottom-24 z-50 flex justify-center px-6"
-          role="status"
-        >
-          <span className="rounded-full bg-claude-ink/90 px-4 py-2 text-center text-sm text-white animate-in fade-in zoom-in-95">
-            {toast.text}
-          </span>
-        </div>
-      )}
+      {toast &&
+        (toast.tone === "error" ? (
+          <div
+            key={toast.id}
+            className="absolute inset-x-0 bottom-24 z-60 flex justify-center px-4"
+            role="alert"
+          >
+            <div className="flex w-full max-w-sm items-center gap-3 rounded-2xl bg-claude-ink px-4 py-3 text-white shadow-xl animate-in fade-in zoom-in-95">
+              <p className="flex-1 text-[17px] leading-snug">{toast.text}</p>
+              <button
+                type="button"
+                onClick={() => setToast(null)}
+                className="h-11 shrink-0 rounded-xl bg-white px-4 text-[16px] font-bold text-claude-ink"
+              >
+                知道了
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            key={toast.id}
+            className="pointer-events-none absolute inset-x-0 bottom-24 z-60 flex justify-center px-6"
+            role="status"
+          >
+            <span className="rounded-2xl bg-claude-ink/90 px-5 py-3 text-center text-[16px] text-white animate-in fade-in zoom-in-95">
+              {toast.text}
+            </span>
+          </div>
+        ))}
     </>
   );
 }

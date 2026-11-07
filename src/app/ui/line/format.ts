@@ -1,4 +1,4 @@
-import type { Message } from "./types";
+import type { Answer } from "./api/types";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -56,16 +56,17 @@ export function formatDateDivider(at: number, now: number) {
     : `${d.getFullYear()}/${md}`;
 }
 
-/** 聊天列表、回覆預覽用的訊息摘要 */
-export function summarize(m: Message) {
-  const who = m.self ? "你" : m.senderName;
-  if (m.unsent) return `${who}已收回訊息`;
-  switch (m.kind) {
-    case "sticker":
-      return `${who}傳送了貼圖`;
-    case "image":
-      return `${who}傳送了照片`;
-    default:
-      return m.text;
-  }
+/** 聊天列表的最新回答預覽：「王小姐：可以用台北通繳費」 */
+export function answerPreview(a: Answer, meId: string) {
+  const who = a.author.id === meId ? "你" : a.author.nickname;
+  if (a.body) return `${who}：${a.body}`;
+  if (a.media.some((m) => m.kind === "audio")) return `${who}傳送了語音訊息`;
+  if (a.media.length > 0) return `${who}傳送了照片`;
+  return `${who}的回答待確認個資，暫時隱藏`;
+}
+
+/** 0:07、1:23 */
+export function formatDuration(seconds: number) {
+  const s = Math.max(0, Math.round(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }

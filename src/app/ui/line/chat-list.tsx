@@ -1,317 +1,262 @@
 "use client";
 
-import {
-  BellOff,
-  CheckCheck,
-  ChevronDown,
-  MessageCirclePlus,
-  Pin,
-  ScanLine,
-  Search,
-  ShieldCheck,
-  X,
-} from "lucide-react";
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { BellOff, Pin, Plus, Search, X } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { Avatar } from "./avatar";
-import { formatListTime, summarize } from "./format";
-import type { Message, Room, RoomType, Status } from "./types";
+import type { Answer, CategoryId, QuestionSummary } from "./api/types";
+import { META } from "./api/mock-api";
+import { QuestionAvatar } from "./avatar";
+import { categoryLabel } from "./categories";
+import { answerPreview, formatListTime } from "./format";
+import { unreadCount, type QuestionPrefs } from "./types";
+import { useBackLayer } from "./use-back-layer";
 import { useLongPress } from "./use-long-press";
 
-type Filter = "all" | RoomType | "unread";
-type Sort = "time" | "unread" | "name";
-
-const FILTERS: { id: Filter; label: string }[] = [
-  { id: "all", label: "全部" },
-  { id: "friend", label: "好友" },
-  { id: "group", label: "群組" },
-  { id: "official", label: "官方帳號" },
-  { id: "unread", label: "未讀" },
-];
-
-const SORTS: { id: Sort; label: string }[] = [
-  { id: "time", label: "依接收時間" },
-  { id: "unread", label: "依未讀訊息" },
-  { id: "name", label: "依名稱" },
-];
+/*
+ * 長輩版的列表刻意只留「搜尋」和「我要發問」：
+ * 篩選標籤、排序、全部已讀、隱藏問題對只問過幾題的人來說都是干擾，
+ * 而且隱藏後沒有地方找回來。釘選、關閉提醒、標為已讀收在長按選單裡（同 LINE）。
+ */
 
 export type ChatListActions = {
   onOpen: (id: string) => void;
+  onAsk: () => void;
   onTogglePin: (id: string) => void;
   onToggleMute: (id: string) => void;
   onMarkRead: (id: string) => void;
-  onHide: (id: string) => void;
-  onMarkAllRead: () => void;
-  onCreate: (name: string) => void;
 };
 
-export function lastVisible(list: Message[] | undefined) {
-  return list?.at(-1);
-}
+type Row = {
+  q: QuestionSummary;
+  prefs: QuestionPrefs;
+  last: Answer | undefined;
+  lastAt: string;
+  unread: number;
+  /** 群組人數：自己＋回答過的人 */
+  members: number;
+};
 
 export function ChatList({
-  rooms,
-  messages,
+  questions,
+  answers,
+  prefs,
+  meId,
   now,
-  status,
+  loading,
   actions,
 }: {
-  rooms: Room[];
-  messages: Record<string, Message[]>;
+  questions: QuestionSummary[];
+  answers: Record<string, Answer[]>;
+  prefs: Record<string, QuestionPrefs>;
+  meId: string;
   now: number;
-  status: Status;
+  loading: boolean;
   actions: ChatListActions;
 }) {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
-  const [sort, setSort] = useState<Sort>("time");
-  const [sortOpen, setSortOpen] = useState(false);
-  const [sheetRoom, setSheetRoom] = useState<Room | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [sheetId, setSheetId] = useState<string | null>(null);
 
-  const visible = useMemo(() => {
+  const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const lastAt = (r: Room) => lastVisible(messages[r.id])?.at ?? r.createdAt;
-    return rooms
-      .filter((r) => !r.hidden)
-      .filter((r) => {
-        if (filter === "all") return true;
-        if (filter === "unread") return r.unread > 0;
-        return r.type === filter;
+    return questions
+      .map((question): Row => {
+        const p = prefs[question.id] ?? {
+          pinned: false,
+          muted: false,
+          lastSeenAt: question.created_at,
+        };
+        const list = answers[question.id] ?? [];
+        const last = list.at(-1);
+        return {
+          q: question,
+          prefs: p,
+          last,
+          lastAt: last?.created_at ?? question.created_at,
+          unread: unreadCount(list, meId, p.lastSeenAt),
+          members:
+            1 +
+            new Set(list.filter((a) => a.author.id !== meId).map((a) => a.author.id))
+              .size,
+        };
       })
       .filter((r) => {
         if (!q) return true;
-        if (r.name.toLowerCase().includes(q)) return true;
-        return (messages[r.id] ?? []).some(
-          (m) => !m.unsent && m.text.toLowerCase().includes(q),
+        if ((r.q.title ?? "").toLowerCase().includes(q)) return true;
+        if (categoryLabel(r.q.category).includes(q)) return true;
+        return (answers[r.q.id] ?? []).some((a) =>
+          (a.body ?? "").toLowerCase().includes(q),
         );
       })
       .sort((a, b) => {
-        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-        if (sort === "unread" && a.unread !== b.unread)
-          return b.unread - a.unread;
-        if (sort === "name") return a.name.localeCompare(b.name, "zh-Hant");
-        return lastAt(b) - lastAt(a);
+        if (a.prefs.pinned !== b.prefs.pinned) return a.prefs.pinned ? -1 : 1;
+        return b.lastAt.localeCompare(a.lastAt);
       });
-  }, [rooms, messages, filter, query, sort]);
+  }, [questions, answers, prefs, meId, query]);
+
+  const sheetRow = rows.find((r) => r.q.id === sheetId);
 
   return (
     <div className="relative flex h-full flex-col bg-claude-ivory">
       <header className="flex items-center justify-between px-4 pt-4 pb-2">
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setSortOpen((v) => !v)}
-            className="flex items-center gap-1 text-[22px] font-bold tracking-tight"
-            aria-haspopup="menu"
-            aria-expanded={sortOpen}
-          >
-            聊天
-            <ChevronDown className="size-5 text-stone-500" />
-          </button>
-          {sortOpen && (
-            <>
-              <button
-                type="button"
-                aria-label="關閉"
-                className="fixed inset-0 z-30 cursor-default"
-                onClick={() => setSortOpen(false)}
-              />
-              <ul
-                role="menu"
-                className="absolute top-full left-0 z-40 mt-1 w-40 overflow-hidden rounded-xl bg-claude-ivory py-1 shadow-lg ring-1 ring-black/5"
-              >
-                {SORTS.map((s) => (
-                  <li key={s.id}>
-                    <button
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={sort === s.id}
-                      onClick={() => {
-                        setSort(s.id);
-                        setSortOpen(false);
-                      }}
-                      className={cn(
-                        "w-full px-4 py-2.5 text-left text-sm hover:bg-claude-sand/40",
-                        sort === s.id && "font-semibold text-claude",
-                      )}
-                    >
-                      {s.label}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          <IconButton label="全部標為已讀" onClick={actions.onMarkAllRead}>
-            <CheckCheck className="size-6" />
-          </IconButton>
-          <IconButton label="建立聊天" onClick={() => setCreating(true)}>
-            <MessageCirclePlus className="size-6" />
-          </IconButton>
-        </div>
+        <h1 className="text-[24px] font-bold tracking-tight">聊天</h1>
+        <button
+          type="button"
+          onClick={actions.onAsk}
+          className="flex h-12 items-center gap-1.5 rounded-full bg-claude pr-5 pl-4 text-[17px] font-bold text-white shadow-sm active:bg-claude-dark"
+        >
+          <Plus className="size-5" strokeWidth={2.8} />
+          我要發問
+        </button>
       </header>
 
-      <div className="px-4">
-        <label className="flex h-9 items-center gap-2 rounded-lg bg-claude-sand/70 px-3 text-stone-500">
-          <Search className="size-4 shrink-0" />
+      <div className="px-4 pb-3">
+        <label className="flex h-11 items-center gap-2 rounded-xl bg-claude-sand/70 px-3.5 text-stone-500">
+          <Search className="size-5 shrink-0" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="搜尋"
-            className="min-w-0 flex-1 bg-transparent text-[15px] text-stone-900 outline-none placeholder:text-stone-400"
+            placeholder="搜尋我的問題"
+            className="min-w-0 flex-1 bg-transparent text-[17px] text-stone-900 outline-none placeholder:text-stone-500"
           />
-          {query ? (
+          {query && (
             <button
               type="button"
               aria-label="清除搜尋"
               onClick={() => setQuery("")}
-              className="rounded-full bg-stone-400 p-0.5 text-white"
+              className="flex size-8 items-center justify-center rounded-full bg-stone-400 text-white"
             >
-              <X className="size-3" />
+              <X className="size-4" />
             </button>
-          ) : (
-            <ScanLine className="size-4 shrink-0" aria-hidden />
           )}
         </label>
       </div>
 
-      <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 py-3">
-        {FILTERS.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            onClick={() => setFilter(f.id)}
-            aria-pressed={filter === f.id}
-            className={cn(
-              "shrink-0 rounded-full border px-3.5 py-1 text-[13px] font-medium transition-colors",
-              filter === f.id
-                ? "border-claude-ink bg-claude-ink text-claude-ivory"
-                : "border-claude-sand text-stone-700 hover:bg-claude-sand/40",
-            )}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
-
-      {status !== "connected" && (
-        <p className="mx-4 mb-1 rounded-md bg-claude/10 px-3 py-1.5 text-xs text-claude-dark">
-          {status === "connecting" ? "連線中…" : "目前離線，新訊息暫時無法收發"}
-        </p>
-      )}
-
       <ul className="flex-1 overflow-y-auto pb-2">
-        {visible.length === 0 && (
-          <li className="px-4 py-16 text-center text-sm text-stone-400">
-            {query ? "沒有符合的聊天" : "沒有聊天"}
+        {loading && (
+          <li className="px-4 py-16 text-center text-[17px] text-stone-500">
+            載入中…
           </li>
         )}
-        {visible.map((room) => (
-          <ChatRow
-            key={room.id}
-            room={room}
-            last={lastVisible(messages[room.id])}
+        {!loading && rows.length === 0 && (
+          <li className="flex flex-col items-center gap-4 px-6 py-16 text-center">
+            <p className="text-[17px] text-stone-500">
+              {query ? "找不到符合的問題" : "還沒有問過問題"}
+            </p>
+            {!query && (
+              <button
+                type="button"
+                onClick={actions.onAsk}
+                className="rounded-2xl bg-claude px-8 py-4 text-lg font-bold text-white"
+              >
+                我要發問
+              </button>
+            )}
+          </li>
+        )}
+        {rows.map((row) => (
+          <QuestionRow
+            key={row.q.id}
+            row={row}
+            meId={meId}
             now={now}
-            onOpen={() => actions.onOpen(room.id)}
-            onMenu={() => setSheetRoom(room)}
+            onOpen={() => actions.onOpen(row.q.id)}
+            onMenu={() => setSheetId(row.q.id)}
           />
         ))}
       </ul>
 
-      {sheetRoom && (
-        <RoomActionSheet
-          room={rooms.find((r) => r.id === sheetRoom.id) ?? sheetRoom}
-          onClose={() => setSheetRoom(null)}
+      {sheetRow && (
+        <RowActionSheet
+          row={sheetRow}
+          onClose={() => setSheetId(null)}
           actions={actions}
-        />
-      )}
-      {creating && (
-        <CreateRoomDialog
-          onClose={() => setCreating(false)}
-          onCreate={(name) => {
-            setCreating(false);
-            actions.onCreate(name);
-          }}
         />
       )}
     </div>
   );
 }
 
-function ChatRow({
-  room,
-  last,
+function StatusChip({ q }: { q: QuestionSummary }) {
+  if (q.status === "resolved") {
+    return (
+      <span className="shrink-0 rounded-md bg-claude-green/15 px-1.5 text-[13px] leading-5 font-medium text-claude-green">
+        已解決
+      </span>
+    );
+  }
+  if (q.status === "in_progress") {
+    return (
+      <span className="shrink-0 rounded-md bg-claude-blue/15 px-1.5 text-[13px] leading-5 font-medium text-claude-blue">
+        協助中
+      </span>
+    );
+  }
+  return null;
+}
+
+function QuestionRow({
+  row,
+  meId,
   now,
   onOpen,
   onMenu,
 }: {
-  room: Room;
-  last: Message | undefined;
+  row: Row;
+  meId: string;
   now: number;
   onOpen: () => void;
   onMenu: () => void;
 }) {
   const press = useLongPress(onMenu);
-  const preview = last ? summarize(last) : (room.status ?? "");
+  const { q, prefs, last, unread } = row;
+  const preview = last ? answerPreview(last, meId) : "已送出，等待熱心的人回答";
   return (
     <li>
       <button
         type="button"
         onClick={onOpen}
         {...press}
-        className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors select-none [-webkit-touch-callout:none] hover:bg-claude-sand/40 active:bg-claude-sand/60"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors select-none [-webkit-touch-callout:none] hover:bg-claude-sand/40 active:bg-claude-sand/60"
       >
-        <Avatar name={room.name} type={room.type} size={52} />
+        <QuestionAvatar q={q} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
-            <span className="truncate text-[15px] font-semibold text-stone-900">
-              {room.name}
+            <span className="truncate text-[17px] font-semibold text-stone-900">
+              {q.title ?? "（內容待確認）"}
             </span>
-            {room.members && (
-              <span className="shrink-0 text-[15px] text-stone-400">
-                ({room.members.length + 1})
+            {row.members > 1 && (
+              <span className="shrink-0 text-[17px] text-stone-500">
+                ({row.members})
               </span>
             )}
-            {room.type === "official" && (
-              <ShieldCheck
-                className="size-4 shrink-0 text-claude"
-                aria-label="官方帳號"
-              />
-            )}
-            {room.muted && (
-              <BellOff
-                className="size-3.5 shrink-0 text-stone-400"
-                aria-label="已關閉提醒"
-              />
+            {prefs.muted && (
+              <BellOff className="size-4 shrink-0 text-stone-500" aria-label="已關閉提醒" />
             )}
           </div>
-          <p className="mt-0.5 truncate text-[13px] text-stone-500">
-            {preview.replace(/\n/g, " ")}
-          </p>
+          <div className="mt-0.5 flex items-center gap-1.5">
+            <StatusChip q={q} />
+            <p className="truncate text-[15px] text-stone-500">
+              {preview.replace(/\n/g, " ")}
+            </p>
+          </div>
         </div>
-        <div className="flex min-h-11 shrink-0 flex-col items-end justify-between self-stretch py-1">
-          <span className="text-[11px] text-stone-400">
-            {last ? formatListTime(last.at, now) : ""}
+        <div className="flex min-h-12 shrink-0 flex-col items-end justify-between self-stretch py-0.5">
+          <span className="text-[13px] text-stone-500">
+            {formatListTime(Date.parse(row.lastAt), now)}
           </span>
           <div className="flex items-center gap-1">
-            {room.pinned && (
-              <Pin
-                className="size-3.5 rotate-45 text-stone-400"
-                aria-label="已釘選"
-              />
+            {prefs.pinned && (
+              <Pin className="size-4 rotate-45 text-stone-500" aria-label="已釘選" />
             )}
-            {room.unread > 0 && (
+            {unread > 0 && (
               <span
                 className={cn(
-                  "min-w-5 rounded-full px-1.5 text-center text-[11px] leading-5 font-semibold text-white",
-                  room.muted ? "bg-stone-300" : "bg-claude",
+                  "min-w-6 rounded-full px-1.5 text-center text-[13px] leading-6 font-bold text-white",
+                  prefs.muted ? "bg-stone-400" : "bg-claude-dark",
                 )}
-                aria-label={`${room.unread} 則未讀`}
+                aria-label={`${unread} 則新回答`}
               >
-                {room.unread > 999 ? "999+" : room.unread}
+                {unread > 99 ? "99+" : unread}
               </span>
             )}
           </div>
@@ -321,33 +266,33 @@ function ChatRow({
   );
 }
 
-function RoomActionSheet({
-  room,
+function RowActionSheet({
+  row,
   onClose,
   actions,
 }: {
-  room: Room;
+  row: Row;
   onClose: () => void;
   actions: ChatListActions;
 }) {
-  const items: { label: string; run: () => void; danger?: boolean }[] = [
+  const id = row.q.id;
+  const items: { label: string; run: () => void }[] = [
     {
-      label: room.pinned ? "取消釘選" : "釘選聊天室",
-      run: () => actions.onTogglePin(room.id),
+      label: row.prefs.pinned ? "取消釘選" : "釘選在最上面",
+      run: () => actions.onTogglePin(id),
     },
     {
-      label: room.muted ? "開啟提醒" : "關閉提醒",
-      run: () => actions.onToggleMute(room.id),
+      label: row.prefs.muted ? "開啟提醒" : "關閉提醒",
+      run: () => actions.onToggleMute(id),
     },
-    ...(room.unread > 0
-      ? [{ label: "標為已讀", run: () => actions.onMarkRead(room.id) }]
+    ...(row.unread > 0
+      ? [{ label: "標為已讀", run: () => actions.onMarkRead(id) }]
       : []),
-    { label: "隱藏", run: () => actions.onHide(room.id), danger: true },
   ];
   return (
     <Sheet onClose={onClose}>
-      <p className="truncate px-4 pt-4 pb-2 text-center text-sm font-semibold text-stone-500">
-        {room.name}
+      <p className="truncate px-4 pt-4 pb-2 text-center text-[15px] font-semibold text-stone-500">
+        {row.q.title ?? "（內容待確認）"}
       </p>
       <ul className="divide-y divide-claude-sand/70">
         {items.map((item) => (
@@ -358,10 +303,7 @@ function RoomActionSheet({
                 item.run();
                 onClose();
               }}
-              className={cn(
-                "w-full px-4 py-3.5 text-[15px] hover:bg-claude-sand/40",
-                item.danger ? "text-red-500" : "text-stone-900",
-              )}
+              className="w-full px-4 py-4 text-[17px] text-stone-900 hover:bg-claude-sand/40"
             >
               {item.label}
             </button>
@@ -372,7 +314,7 @@ function RoomActionSheet({
       <button
         type="button"
         onClick={onClose}
-        className="w-full px-4 py-3.5 text-[15px] text-stone-500 hover:bg-claude-sand/40"
+        className="w-full px-4 py-4 text-[17px] text-stone-600 hover:bg-claude-sand/40"
       >
         取消
       </button>
@@ -380,58 +322,61 @@ function RoomActionSheet({
   );
 }
 
-function CreateRoomDialog({
+/**
+ * 發問視窗：分類只是一個小小的下拉選單（預設「其他」，之後由志工分流），
+ * 主角是大大的「發問」按鈕；按下後進入空的群組，用打字、拍照或錄音說明問題。
+ */
+export function AskSheet({
+  onAsk,
   onClose,
-  onCreate,
 }: {
+  onAsk: (category: CategoryId) => void;
   onClose: () => void;
-  onCreate: (name: string) => void;
 }) {
-  const [name, setName] = useState("");
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    const trimmed = name.trim();
-    if (trimmed) onCreate(trimmed);
-  }
+  const [category, setCategory] = useState<CategoryId>("other");
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/40 p-6 animate-in fade-in">
-      <form
-        onSubmit={submit}
-        className="w-full max-w-xs rounded-2xl bg-claude-ivory p-5 shadow-xl animate-in zoom-in-95"
-      >
-        <h2 className="text-center text-base font-bold">建立聊天</h2>
-        <p className="mt-1 text-center text-xs text-stone-500">
-          輸入相同名稱的人會進到同一個聊天室
+    <Sheet onClose={onClose}>
+      <div className="px-5 pt-6 pb-4">
+        <h2 className="text-center text-[22px] font-bold">我要發問</h2>
+        <p className="mt-1.5 text-center text-[17px] leading-relaxed text-stone-600">
+          按下「發問」後，
+          <br />
+          可以打字、拍照或錄音說明您的問題
         </p>
-        <input
-          autoFocus
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={20}
-          placeholder="聊天室名稱"
-          className="mt-4 w-full rounded-lg border border-claude-sand px-3 py-2 text-[15px] outline-none focus:border-claude"
-        />
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg bg-claude-sand/60 py-2 text-sm font-medium text-stone-700"
+        <label className="mt-5 flex items-center justify-center gap-2 text-[15px] text-stone-600">
+          分類
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value as CategoryId)}
+            className="h-10 rounded-lg border border-claude-sand bg-white px-2 text-[15px] text-stone-800 outline-none focus:border-claude"
           >
-            取消
-          </button>
-          <button
-            type="submit"
-            disabled={!name.trim()}
-            className="rounded-lg bg-claude py-2 text-sm font-semibold text-white disabled:opacity-40"
-          >
-            建立
-          </button>
-        </div>
-      </form>
-    </div>
+            {META.categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          onClick={() => onAsk(category)}
+          className="mt-4 w-full rounded-2xl bg-claude py-4 text-[22px] font-bold text-white shadow-sm active:bg-claude-dark"
+        >
+          發問
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-2 w-full py-3 text-[17px] text-stone-600"
+        >
+          取消
+        </button>
+      </div>
+    </Sheet>
   );
 }
 
+/** 底部彈出視窗；手機的返回鍵也能關掉 */
 export function Sheet({
   onClose,
   children,
@@ -439,6 +384,7 @@ export function Sheet({
   onClose: () => void;
   children: ReactNode;
 }) {
+  useBackLayer(true, onClose);
   return (
     <div className="absolute inset-0 z-40 flex flex-col justify-end">
       <button
@@ -447,23 +393,26 @@ export function Sheet({
         onClick={onClose}
         className="absolute inset-0 cursor-default bg-black/40 animate-in fade-in"
       />
-      <div className="relative overflow-hidden rounded-t-2xl bg-claude-ivory pb-[env(safe-area-inset-bottom)] animate-in slide-in-from-bottom duration-200">
+      <div className="relative max-h-[90%] overflow-y-auto rounded-t-2xl bg-claude-ivory pb-[env(safe-area-inset-bottom)] animate-in slide-in-from-bottom duration-200">
         {children}
       </div>
     </div>
   );
 }
 
+/** 圖示按鈕：預設 48px，符合長輩好按的大小 */
 export function IconButton({
   label,
   onClick,
   children,
   className,
+  disabled,
 }: {
   label: string;
   onClick?: () => void;
   children: ReactNode;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -471,8 +420,9 @@ export function IconButton({
       aria-label={label}
       title={label}
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        "inline-flex size-9 items-center justify-center rounded-full text-stone-800 transition-colors hover:bg-black/5 active:bg-black/10",
+        "inline-flex size-12 shrink-0 items-center justify-center rounded-full text-stone-800 transition-colors hover:bg-black/5 active:bg-black/10 disabled:opacity-40",
         className,
       )}
     >
