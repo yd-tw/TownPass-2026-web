@@ -263,7 +263,8 @@ export function ChatRoom(props: ChatRoomProps) {
   }
 
   // ---- 送出 ----
-  async function sendText() {
+  /** @param audio 有待傳附件時錄的音，和附件一起送出 */
+  async function sendText(audio?: { blob: Blob; duration: number }) {
     const trimmed = text.trim();
     if ((!trimmed && pendingMedia.length === 0) || sending || checkingVideo) return;
     if (trimmed.length > limits.question_body_max_chars) {
@@ -275,6 +276,7 @@ export function ChatRoom(props: ChatRoomProps) {
           kind: "media",
           text: trimmed || undefined,
           files: pendingMedia.map(({ kind, file, duration }) => ({ kind, file, duration })),
+          audio,
         })
       : await props.onSend({ kind: "text", text: trimmed });
     if (sent) {
@@ -538,7 +540,9 @@ export function ChatRoom(props: ChatRoomProps) {
           onCancel={() => setRecording(false)}
           onDone={(blob, duration) => {
             setRecording(false);
-            props.onSend({ kind: "audio", blob, duration });
+            // 有待傳附件（例如 App 問題回報的截圖）時，錄音和附件放在同一則送出
+            if (pendingMedia.length > 0) sendText({ blob, duration });
+            else props.onSend({ kind: "audio", blob, duration });
           }}
           onError={(message) => {
             setRecording(false);
@@ -605,26 +609,29 @@ export function ChatRoom(props: ChatRoomProps) {
               className="field-sizing-content max-h-36 min-h-12 min-w-0 flex-1 resize-none bg-transparent py-3 text-[15px] leading-6 outline-none placeholder:text-tp-gray-600"
             />
           </div>
-          {text.trim() || pendingMedia.length > 0 ? (
+          {/* 沒打字時都可以錄音，包含已經有待傳附件的時候 */}
+          {!text.trim() && (
+            <IconButton
+              label="錄音"
+              disabled={sending || checkingVideo || pendingMedia.length >= limits.media_per_post_max}
+              onClick={() => setRecording(true)}
+              className="max-[300px]:size-10"
+            >
+              <Mic className="size-7" />
+            </IconButton>
+          )}
+          {(text.trim() || pendingMedia.length > 0) && (
             <IconButton
               label="傳送"
-              className="text-tp-primary-500"
+              className="text-tp-primary-500 max-[300px]:size-10"
               disabled={sending || checkingVideo}
-              onClick={sendText}
+              onClick={() => sendText()}
             >
               {sending || checkingVideo ? (
                 <LoaderCircle className="size-7 animate-spin" />
               ) : (
                 <SendHorizontal className="size-7" />
               )}
-            </IconButton>
-          ) : (
-            <IconButton
-              label="錄音"
-              disabled={sending}
-              onClick={() => setRecording(true)}
-            >
-              <Mic className="size-7" />
             </IconButton>
           )}
           </div>

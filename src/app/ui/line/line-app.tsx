@@ -463,11 +463,17 @@ function LineAppConnected({ api, note, ask }: { api: AskerApi; note: string | nu
     readReportDraft()
       .then((report) => {
         if (!report) return;
-        // 換新的 key 讓聊天室重新掛載，帶入截圖；問題回報不通知附近的人
+        // 換新的 key 讓聊天室重新掛載，帶入截圖；位置分享沿用目前設定（預設概略位置）
         setActive((current) =>
           current?.id
             ? current
-            : { key: makeId(), id: null, category: "app_usage", locationSharing: "off", report },
+            : {
+                key: makeId(),
+                id: null,
+                category: "app_usage",
+                locationSharing: current?.locationSharing ?? "approximate",
+                report,
+              },
         );
       })
       .catch(() => notify("沒有讀到 App 的截圖，請直接描述遇到的問題", "error"));
@@ -537,6 +543,9 @@ function LineAppConnected({ api, note, ask }: { api: AskerApi; note: string | nu
         for (const item of out.files) {
           // 規格：圖片要先在手機端遮蔽個資才上傳（尚未實作遮蔽工具）
           mediaIds.push((await api.uploadMedia(item.file, item.kind, item.duration)).id);
+        }
+        if (out.audio) {
+          mediaIds.push((await api.uploadMedia(out.audio.blob, "audio", out.audio.duration)).id);
         }
       } else {
         mediaIds.push((await api.uploadMedia(out.blob, "audio", out.duration)).id);

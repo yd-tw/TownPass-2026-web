@@ -7,6 +7,8 @@ export type Outgoing =
       kind: "media";
       text?: string;
       files: { kind: "image" | "video"; file: File; duration?: number }[];
+      /** 有待傳附件時錄音，和附件一起送出 */
+      audio?: { blob: Blob; duration: number };
     }
   | { kind: "audio"; blob: Blob; duration: number };
 
