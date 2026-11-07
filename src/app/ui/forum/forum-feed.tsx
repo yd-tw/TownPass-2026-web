@@ -42,7 +42,7 @@ export function ForumFeed({
 
   return (
     <div className="relative flex h-full flex-col bg-claude-ivory">
-      <div className="px-4 pt-4 pb-3">
+      <div className="px-4 pt-4 pb-2">
         <label className="flex h-11 items-center gap-2 rounded-xl bg-claude-sand/70 px-3.5 text-stone-500">
           <Search className="size-5 shrink-0" />
           <input
@@ -66,6 +66,30 @@ export function ForumFeed({
         </label>
       </div>
 
+      <div className="flex gap-2 px-4 pb-2" role="group" aria-label="篩選討論串">
+        {(
+          [
+            ["all", "全部"],
+            ["uncategorized", "待分類"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={filter === id}
+            onClick={() => onFilterChange(id)}
+            className={cn(
+              "min-h-10 rounded-full border px-4 text-[15px] font-medium transition-colors",
+              filter === id
+                ? "border-claude-ink bg-claude-ink text-claude-ivory"
+                : "border-claude-sand text-stone-700 hover:bg-claude-sand/40",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 overflow-y-auto">
         <button
           type="button"
@@ -74,30 +98,6 @@ export function ForumFeed({
         >
           <span className="flex items-center gap-2.5"><Avatar name={nickname} size={40} /><span className="text-[15px] text-stone-500">有什麼問題？</span></span>
         </button>
-
-        <div className="flex gap-2 px-4 pt-1 pb-2" role="group" aria-label="篩選討論串">
-          {(
-            [
-              ["all", "全部"],
-              ["uncategorized", "待分類"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={filter === id}
-              onClick={() => onFilterChange(id)}
-              className={cn(
-                "min-h-10 rounded-full border px-4 text-[15px] font-medium transition-colors",
-                filter === id
-                  ? "border-claude-ink bg-claude-ink text-claude-ivory"
-                  : "border-claude-sand text-stone-700 hover:bg-claude-sand/40",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
 
         {loading && <p className="py-12 text-center text-[15px] text-stone-500">載入討論中…</p>}
         {!loading && visible.length === 0 && (
