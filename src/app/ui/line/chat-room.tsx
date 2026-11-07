@@ -894,7 +894,7 @@ function TextBubble({
       className={cn(
         "relative rounded-[18px] px-3.5 py-2.5 text-[15px] leading-snug wrap-break-word whitespace-pre-wrap text-tp-gray-900",
         !self && "shadow-[0_1px_1px_rgb(20_20_19/0.06)]",
-        tail && (self ? "rounded-tr-[4px]" : "rounded-tl-[4px]"),
+        tail && (self ? "rounded-tr-lg" : "rounded-tl-lg"),
       )}
       style={{ background: color }}
     >
@@ -904,7 +904,7 @@ function TextBubble({
           width="9"
           height="12"
           viewBox="0 0 9 12"
-          className={cn("absolute top-0", self ? "-right-[7px] -scale-x-100" : "-left-[7px]")}
+          className={cn("absolute top-0", self ? "-right-1.75 -scale-x-100" : "-left-1.75")}
         >
           <path d="M9 0H1.2C.2 0-.3 1.2.4 1.9L9 12Z" style={{ fill: color }} />
         </svg>
