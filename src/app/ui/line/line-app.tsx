@@ -27,7 +27,7 @@ import { ChatRoom, type PendingMedia } from "./chat-room";
 import { ChatList, type ChatListActions } from "./chat-list";
 import { BottomNav } from "./other-tabs";
 import type { Notify, Outgoing, Tab } from "./types";
-import { callApp, isInTownPass, type ReportDraft } from "@/lib/townpass-bridge";
+import { callApp, isInTownPass, postToApp, type ReportDraft } from "@/lib/townpass-bridge";
 
 const NICK_KEY = "line-demo-nickname";
 
@@ -558,6 +558,24 @@ function LineAppConnected({
     api.watch([...questions.map((q) => q.id), ...(activeId ? [activeId] : [])]);
   }, [api, questions, activeId]);
 
+  // 打開聊天室就把這題的通知標為已讀，並請 App 更新按鈕上的未讀數
+  const markRead = useCallback(
+    (id: string) => {
+      api
+        .markQuestionRead(id)
+        .then((count) => {
+          if (count > 0) postToApp("chat_unread_changed");
+        })
+        .catch(() => {
+          // 標記失敗不影響聊天；下次打開再標
+        });
+    },
+    [api],
+  );
+  useEffect(() => {
+    if (activeId) markRead(activeId);
+  }, [activeId, markRead]);
+
   // ---- 即時訊號：更新當前問題；討論串排序留待使用者手動重新整理 ----
   useEffect(
     () =>
@@ -578,6 +596,8 @@ function LineAppConnected({
           const [list] = await Promise.all([loadAnswers(id), loadSummaries(), loadQuestion(id)]);
           const { me: currentMe, activeId } = latest.current;
           // 正在看這題就不用再提醒；還沒載入過的問題也不提醒，避免一次跳出舊回答
+          // 正在看的聊天室有新回覆：通知會一起產生，也直接標為已讀
+          if (activeId === id) markRead(id);
           if (activeId === id || !known) return;
           const knownIds = new Set(known.map((a) => a.id));
           const fresh = list.filter((a) => !knownIds.has(a.id) && a.author.id !== currentMe?.id);
@@ -587,7 +607,7 @@ function LineAppConnected({
           // 問題已被撤回（404）等情況：下次載入列表時會修正
         }
       }),
-    [api, loadAll, loadAnswers, loadQuestion, loadSummaries, loadForumQuestions, notify],
+    [api, loadAll, loadAnswers, loadQuestion, loadSummaries, loadForumQuestions, markRead, notify],
   );
 
   // ---- 動作 ----

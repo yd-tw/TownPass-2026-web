@@ -636,6 +636,11 @@ export function createMockApi(
       emit({ type: "feed.changed" });
     },
 
+    async markQuestionRead() {
+      // 範例資料沒有通知
+      return 0;
+    },
+
     async listAnswers(questionId) {
       await wait(150);
       findQuestion(questionId);

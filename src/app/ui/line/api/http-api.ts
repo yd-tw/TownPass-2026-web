@@ -242,6 +242,15 @@ export function createHttpApi(
     listAnswers: (questionId) =>
       all<Answer>(`/questions/${encodeURIComponent(questionId)}/answers?sort=oldest`),
 
+    async markQuestionRead(questionId) {
+      const unread = await all<{ id: string; question_id?: string | null }>(
+        "/notifications?unread_only=true",
+      );
+      const ids = unread.filter((n) => n.question_id === questionId).map((n) => n.id);
+      if (ids.length) await request("POST", "/notifications/read", { ids });
+      return ids.length;
+    },
+
     createAnswer: (questionId, req) =>
       data<Answer>("POST", `/questions/${encodeURIComponent(questionId)}/answers`, req),
 

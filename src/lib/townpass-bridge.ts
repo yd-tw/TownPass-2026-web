@@ -88,6 +88,12 @@ export function callApp<T = unknown>(name: string, data: unknown = null, timeout
   });
 }
 
+/** 通知 App、不等回覆（App 不會回覆的功能用這個，避免 callApp 白等到逾時） */
+export function postToApp(name: string, data: unknown = null): void {
+  const bridge = typeof window !== "undefined" ? window.flutterObject : undefined;
+  bridge?.postMessage(JSON.stringify({ name, data }));
+}
+
 // ---- 型別 ----
 
 export type UserInfo = {

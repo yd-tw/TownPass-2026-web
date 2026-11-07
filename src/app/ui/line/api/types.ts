@@ -177,6 +177,11 @@ export type AskerApi = {
   deleteQuestion(id: string): Promise<void>;
   /** GET /questions/{id}/answers?sort=oldest（聊天室依時間排列） */
   listAnswers(questionId: string): Promise<Answer[]>;
+  /**
+   * 把這個問題的未讀通知標為已讀（GET /notifications?unread_only=true → POST /notifications/read），
+   * 回傳標記了幾則。App 按鈕上的聊天未讀數就是用這些通知算的。
+   */
+  markQuestionRead(questionId: string): Promise<number>;
   createAnswer(questionId: string, req: CreateAnswerRequest): Promise<Answer>;
   deleteAnswer(answerId: string): Promise<void>;
   resolveQuestion(questionId: string): Promise<QuestionDetail>;
