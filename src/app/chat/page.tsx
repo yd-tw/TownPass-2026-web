@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import LineApp from "@/app/ui/line/line-app";
 
 export const metadata: Metadata = {
-  title: "聊天",
+  title: "我的問題",
   description: "查看自己的問題與聊天室，並發出新問題",
 };
 

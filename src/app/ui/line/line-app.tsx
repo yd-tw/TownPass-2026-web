@@ -38,7 +38,7 @@ const noopSubscribe = () => () => {};
  * 範例資料的時間是相對於「現在」產生的，而 Cache Components 會預先渲染
  * Client Component，所以整個 App 只在瀏覽器端掛載，伺服器端只輸出外框。
  */
-const TAB_TITLE: Record<Tab, string> = { chats: "聊天", forum: "討論串" };
+const TAB_TITLE: Record<Tab, string> = { chats: "我的問題", forum: "討論串" };
 
 /**
  * @param ask 一開啟就進入新問題聊天室（/new「我要發問」）
