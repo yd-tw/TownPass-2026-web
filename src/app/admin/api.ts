@@ -1,6 +1,6 @@
 import { API_BASE } from "@/app/ui/line/api/http-api";
 import { ApiError } from "@/app/ui/line/api/types";
-import type { CategoryId, Media } from "@/app/ui/line/api/types";
+import type { CategoryId, Media, Meta } from "@/app/ui/line/api/types";
 
 export { ApiError };
 
@@ -146,7 +146,9 @@ export type Page<T> = { items: T[]; next: string | null };
 
 export type QuestionFilter = {
   status?: QuestionStatus;
+  /** 過渡期：後端仍支援以分類代碼查詢待分類問題 */
   category?: CategoryId;
+  tag?: string;
   language?: string;
   tag_q?: string;
   service_id?: string;
@@ -156,11 +158,12 @@ export type AdminApi = {
   /** 示範模式時為 true（資料只存在這個分頁） */
   demo: boolean;
   me: AdminUser | PublicUser;
+  getMeta(): Promise<Meta>;
   pageAnalytics(filter: { since?: string; until?: string; service_id?: string }): Promise<PageAnalytics>;
-  listQuestions(filter: QuestionFilter, cursor?: string | null): Promise<Page<QuestionSummary>>;
+  listQuestions(filter: QuestionFilter, cursor?: string | null): Promise<Page<QuestionDetail>>;
   getQuestion(id: string): Promise<QuestionDetail>;
   listAnswers(questionId: string): Promise<Answer[]>;
-  editQuestion(id: string, patch: { title?: string; body?: string | null }): Promise<QuestionDetail>;
+  editQuestion(id: string, patch: { body: string | null }): Promise<QuestionDetail>;
   editAnswer(id: string, body: string): Promise<Answer>;
   deleteQuestion(id: string): Promise<void>;
   deleteAnswer(id: string): Promise<void>;
@@ -279,9 +282,16 @@ export function createAdminApi(session: AdminSession, onUnauthorized: () => void
   return {
     demo: false,
     me: session.user,
+    getMeta: () => data("GET", "/meta"),
     pageAnalytics: (f) => data("GET", `/admin/analytics/pages${query({ ...f, limit: 50 })}`),
-    listQuestions: (f, cursor) =>
-      page(`/questions${query({ scope: "global", sort: "latest", ...f, cursor, limit: 30 })}`),
+    async listQuestions(f, cursor) {
+      const summaries = await page<QuestionSummary>(`/questions${query({ scope: "global", sort: f.tag_q ? undefined : "latest", ...f, cursor, limit: 20 })}`);
+      const details = await Promise.all(summaries.items.map((q) => data<QuestionDetail>("GET", `/questions/${id(q.id)}`).catch((error) => {
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      })));
+      return { items: details.filter((q): q is QuestionDetail => q !== null), next: summaries.next };
+    },
     getQuestion: (q) => data("GET", `/questions/${id(q)}`),
     async listAnswers(q) {
       const out: Answer[] = [];

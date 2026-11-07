@@ -3,9 +3,8 @@
 import { ArrowRight, Info } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { categoryLabel } from "@/app/ui/line/categories";
 import type { AdminApi, PageStat } from "../api";
-import { Card, Empty, ErrorBox, Loading, SectionTitle, Select, formatTime, inputClass, timeAgo, useAsync } from "../ui";
+import { Card, Empty, ErrorBox, Loading, SectionTitle, Select, formatTime, inputClass, timeAgo, useAdminMeta, useAsync } from "../ui";
 
 /*
  * 頁面問題分析（GET /admin/analytics/pages）。
@@ -36,6 +35,7 @@ function endOfDay(date: string) {
 }
 
 export function AnalyticsSection({ api, onOpenService }: { api: AdminApi; onOpenService: (serviceId: string) => void }) {
+  const meta = useAdminMeta();
   const [range, setRange] = useState<Range>("30");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -64,6 +64,7 @@ export function AnalyticsSection({ api, onOpenService }: { api: AdminApi; onOpen
   );
 
   const maxCount = Math.max(1, ...(data?.pages ?? []).map((p) => p.question_count));
+  const categoryLabels = Object.fromEntries(meta.categories.map((category) => [category.id, category.label]));
   const onlyRoot = !!data && data.pages.length > 0 && data.pages.every((p) => p.page_route === "/");
 
   return (
@@ -133,7 +134,7 @@ export function AnalyticsSection({ api, onOpenService }: { api: AdminApi; onOpen
                   </thead>
                   <tbody>
                     {data.pages.map((p, i) => (
-                      <PageRow key={`${p.service_id} ${p.page_route}`} rank={i + 1} page={p} max={maxCount} onOpenService={onOpenService} />
+                      <PageRow key={`${p.service_id} ${p.page_route}`} rank={i + 1} page={p} max={maxCount} onOpenService={onOpenService} categoryLabels={categoryLabels} />
                     ))}
                   </tbody>
                 </table>
@@ -173,7 +174,7 @@ export function Legend() {
   );
 }
 
-function PageRow({ rank, page, max, onOpenService }: { rank: number; page: PageStat; max: number; onOpenService: (id: string) => void }) {
+function PageRow({ rank, page, max, onOpenService, categoryLabels }: { rank: number; page: PageStat; max: number; onOpenService: (id: string) => void; categoryLabels: Record<string, string> }) {
   const topCategories = page.categories.slice(0, 3);
   const unresolved = page.open_count + page.in_progress_count;
 
@@ -189,7 +190,7 @@ function PageRow({ rank, page, max, onOpenService }: { rank: number; page: PageS
           <p className="mt-1.5 flex flex-wrap gap-1" aria-label="最常見的問題類型">
             {topCategories.map((c) => (
               <span key={c.category} className="rounded-md bg-tp-gray-100 px-1.5 py-0.5 text-xs text-tp-gray-700">
-                {categoryLabel(c.category)} <span className="font-semibold tabular-nums">{c.count}</span>
+                {categoryLabels[c.category] ?? c.category} <span className="font-semibold tabular-nums">{c.count}</span>
               </span>
             ))}
           </p>

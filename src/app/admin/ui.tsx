@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { META } from "@/app/ui/line/api/mock-api";
 import { isUncategorized, questionSystemTag } from "@/app/ui/line/categories";
-import type { CategoryId } from "@/app/ui/line/api/types";
+import type { CategoryId, Meta } from "@/app/ui/line/api/types";
 import { ApiError, type Page, type QuestionStatus, type QuestionSummary, type UserRole } from "./api";
 
 // ---- 錯誤訊息 ----
@@ -67,6 +67,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 // ---- 載入資料 ----
 
+const MetaContext = createContext<Meta>(META);
+export const AdminMetaProvider = MetaContext.Provider;
+export const useAdminMeta = () => useContext(MetaContext);
+
 /** 依 deps 載入一次；回傳 reload 讓操作後重抓 */
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
   const [state, setState] = useState<{ data?: T; error?: string; loading: boolean }>({ loading: true });
@@ -95,7 +99,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
 }
 
 /** 依 next_cursor 分頁的列表：先載第一頁，按「載入更多」再接下一頁 */
-export function usePaged<T>(fetchPage: (cursor: string | null) => Promise<Page<T>>, deps: unknown[]) {
+export function usePaged<T extends { id: string }>(fetchPage: (cursor: string | null) => Promise<Page<T>>, deps: unknown[]) {
   const [items, setItems] = useState<T[]>([]);
   const [next, setNext] = useState<string | null>(null);
   const [more, setMore] = useState(false);
@@ -117,7 +121,10 @@ export function usePaged<T>(fetchPage: (cursor: string | null) => Promise<Page<T
     setMore(true);
     try {
       const p = await fetchRef.current(next);
-      setItems((x) => [...x, ...p.items]);
+      setItems((x) => {
+        const ids = new Set(x.map((item) => item.id));
+        return [...x, ...p.items.filter((item) => !ids.has(item.id))];
+      });
       setNext(p.next);
     } catch (e) {
       notify(errorText(e), "error");
@@ -201,12 +208,12 @@ export function StatusBadge({ status }: { status: QuestionStatus }) {
 
 type TagSource = Pick<QuestionSummary, "system_tag" | "category" | "tags">;
 
-/** 固定標籤（system_tag）：後端決定，未分類時用黃色提醒 */
+/** 固定標籤（system_tag）：後端決定；「未分類」不當作可見標籤 */
 export function SystemTagBadge({ q }: { q: TagSource }) {
   const tag = questionSystemTag(q);
-  if (!tag) return null;
+  if (!tag || isUncategorized(q)) return null;
   return (
-    <Badge tone={isUncategorized(q) ? "secondary" : "gray"} className="gap-0.5">
+    <Badge tone="gray" className="gap-0.5">
       <span aria-hidden>#</span>
       {tag.replace(/^#/, "")}
     </Badge>
@@ -214,10 +221,10 @@ export function SystemTagBadge({ q }: { q: TagSource }) {
 }
 
 /** 固定標籤對應的分類代碼（PUT /questions/{id}/category 要傳代碼） */
-export function categoryOf(q: TagSource): CategoryId {
+export function categoryOf(q: TagSource, categories: Meta["categories"] = META.categories): CategoryId {
   if (q.category) return q.category;
   const tag = questionSystemTag(q)?.replace(/^#/, "");
-  return META.categories.find((c) => c.label === tag)?.id ?? "uncategorized";
+  return categories.find((c) => c.label === tag)?.id ?? "uncategorized";
 }
 
 export const ROLE_LABEL: Record<UserRole, string> = { user: "一般使用者", admin: "管理員", bot: "機器人" };

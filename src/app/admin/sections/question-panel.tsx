@@ -2,9 +2,8 @@
 
 import { Bot, CircleCheckBig, EyeOff, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { META } from "@/app/ui/line/api/mock-api";
 import type { CategoryId } from "@/app/ui/line/api/types";
-import { questionManualTags, questionSystemTag } from "@/app/ui/line/categories";
+import { isUncategorized, questionManualTags, questionSystemTag } from "@/app/ui/line/categories";
 import type { AdminApi, Answer, QuestionDetail } from "../api";
 import {
   Badge,
@@ -19,12 +18,11 @@ import {
   categoryOf,
   errorText,
   formatTime,
-  inputClass,
   useAsync,
+  useAdminMeta,
   useToast,
 } from "../ui";
 
-const CATEGORY_OPTIONS = META.categories.map((c) => [c.id, c.label] as const);
 const TAG_PATTERN = /^[\p{L}\p{N} _\-·]{1,20}$/u;
 
 /**
@@ -93,7 +91,7 @@ export function QuestionPanel({
           {loading && !q && <Loading />}
           {q && answers && (
             <>
-              <QuestionEditor key={`${q.id}-${q.title}-${q.body}`} api={api} q={q} run={run} onDelete={() => setConfirm({ kind: "question" })} />
+              <QuestionEditor key={`${q.id}-${q.body}`} api={api} q={q} run={run} onDelete={() => setConfirm({ kind: "question" })} />
               <Organize key={`org-${q.id}-${q.tags.join(",")}`} api={api} q={q} run={run} />
               <ContextBlock q={q} />
               <section>
@@ -151,7 +149,6 @@ type Run = (action: () => Promise<unknown>, done: string) => Promise<boolean>;
 
 function QuestionEditor({ api, q, run, onDelete }: { api: AdminApi; q: QuestionDetail; run: Run; onDelete: () => void }) {
   const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState(q.title ?? "");
   const [body, setBody] = useState(q.body ?? "");
   const [busy, setBusy] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -159,7 +156,7 @@ function QuestionEditor({ api, q, run, onDelete }: { api: AdminApi; q: QuestionD
 
   async function save() {
     setBusy(true);
-    const ok = await run(() => api.editQuestion(q.id, { title: title.trim(), body: body.trim() || null }), "已修改問題，作者會收到通知");
+    const ok = await run(() => api.editQuestion(q.id, { body: body.trim() || null }), "已修改問題，作者會收到通知");
     setBusy(false);
     if (ok) setEditing(false);
   }
@@ -179,21 +176,19 @@ function QuestionEditor({ api, q, run, onDelete }: { api: AdminApi; q: QuestionD
 
       {editing ? (
         <div className="mt-3 space-y-2">
-          <input value={title} maxLength={80} onChange={(e) => setTitle(e.target.value)} aria-label="標題" className={`${inputClass} w-full font-semibold`} />
           <textarea value={body} maxLength={5000} onChange={(e) => setBody(e.target.value)} aria-label="內文" rows={6} className="w-full resize-y rounded-lg border border-tp-gray-200 p-3 text-sm leading-relaxed outline-none focus:border-tp-primary-500" />
           <div className="flex justify-end gap-2">
             <Button size="sm" onClick={() => setEditing(false)} disabled={busy}>
               取消
             </Button>
-            <Button size="sm" variant="primary" busy={busy} disabled={!title.trim()} onClick={save}>
+            <Button size="sm" variant="primary" busy={busy} disabled={!body.trim() && q.media.length === 0} onClick={save}>
               儲存
             </Button>
           </div>
         </div>
       ) : (
         <>
-          <h3 className="mt-3 text-lg font-bold text-tp-gray-900">{q.title ?? "（標題待確認）"}</h3>
-          <p className="mt-1.5 text-sm leading-relaxed whitespace-pre-wrap text-tp-gray-800">{q.body ?? "（沒有文字內容）"}</p>
+          <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap text-tp-gray-800">{q.body ?? (q.media.length > 0 ? "（只有附件）" : "（沒有文字內容）")}</p>
         </>
       )}
 
@@ -251,9 +246,12 @@ function QuestionEditor({ api, q, run, onDelete }: { api: AdminApi; q: QuestionD
  * 後面最多 5 個手動標籤（PUT /tags 只送手動標籤）。
  */
 function Organize({ api, q, run }: { api: AdminApi; q: QuestionDetail; run: Run }) {
+  const meta = useAdminMeta();
+  const categoryOptions = meta.categories.map((c) => [c.id, c.label] as const);
   const original = questionManualTags(q);
-  const fixed = questionSystemTag(q)?.replace(/^#/, "");
-  const [category, setCategory] = useState<CategoryId>(categoryOf(q));
+  const systemTag = questionSystemTag(q)?.replace(/^#/, "");
+  const fixed = isUncategorized(q) ? null : systemTag;
+  const [category, setCategory] = useState<CategoryId>(categoryOf(q, meta.categories));
   const [tags, setTags] = useState<string[]>(original);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState<"category" | "tags" | null>(null);
@@ -271,7 +269,7 @@ function Organize({ api, q, run }: { api: AdminApi; q: QuestionDetail; run: Run 
       notify("標籤最多 5 個", "error");
       return;
     }
-    if (t === fixed) {
+    if (t === systemTag) {
       setInput("");
       return;
     }
@@ -291,11 +289,11 @@ function Organize({ api, q, run }: { api: AdminApi; q: QuestionDetail; run: Run 
       <div>
         <h3 className="mb-2 text-sm font-bold text-tp-gray-800">固定標籤</h3>
         <div className="flex gap-2">
-          <Select label="固定標籤" value={category} onChange={setCategory} options={CATEGORY_OPTIONS} className="flex-1" />
+          <Select label="固定標籤" value={category} onChange={setCategory} options={categoryOptions} className="flex-1" />
           <Button
             size="md"
             variant="primary"
-            disabled={category === categoryOf(q)}
+            disabled={category === categoryOf(q, meta.categories)}
             busy={busy === "category"}
             onClick={async () => {
               setBusy("category");
@@ -311,7 +309,7 @@ function Organize({ api, q, run }: { api: AdminApi; q: QuestionDetail; run: Run 
         <h3 className="mb-2 text-sm font-bold text-tp-gray-800">手動標籤（{tags.length}/5）</h3>
         <div className="flex min-h-10 flex-wrap items-center gap-1.5 rounded-lg border border-tp-gray-200 px-2 py-1.5 focus-within:border-tp-primary-500">
           {fixed && (
-            <span className="inline-flex items-center rounded-md bg-tp-gray-100 px-1.5 py-0.5 text-xs font-semibold text-tp-gray-600" title="固定標籤由後端決定，請用左邊的選單修改">
+            <span className="inline-flex items-center rounded-md bg-tp-gray-100 px-1.5 py-0.5 text-xs font-semibold text-tp-gray-600" title="固定標籤由後端決定">
               #{fixed}
             </span>
           )}

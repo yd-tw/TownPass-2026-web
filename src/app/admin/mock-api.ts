@@ -1,5 +1,6 @@
 import type { CategoryId } from "@/app/ui/line/api/types";
 import { categoryLabel } from "@/app/ui/line/categories";
+import { META } from "@/app/ui/line/api/mock-api";
 import {
   ApiError,
   PII_PENDING_MESSAGE,
@@ -13,7 +14,6 @@ import {
   type PiiReport,
   type QuestionContext,
   type QuestionDetail,
-  type QuestionSummary,
 } from "./api";
 
 /*
@@ -265,7 +265,6 @@ export function createMockAdminApi(): AdminApi {
     { source_answer_id: "a-c4", source_question_id: "q-c4", question_title: null, answer_body: null, score: -3, positive_count: 0, negative_count: 4, reply_count: 15, blocked: true, updated_at: iso(4 * DAY) },
   ];
 
-  const summary = (q: QuestionDetail): QuestionSummary => clone(q);
   const alive = (id: string) => questions.some((q) => q.id === id);
   function hasPendingTextPii(targetId: string) {
     return pii.some((p) => p.status === "pending" && p.target_id === targetId && p.text_field);
@@ -274,6 +273,10 @@ export function createMockAdminApi(): AdminApi {
   return {
     demo: true,
     me,
+    async getMeta() {
+      await wait();
+      return clone(META);
+    },
 
     async pageAnalytics(f) {
       await wait();
@@ -329,11 +332,10 @@ export function createMockAdminApi(): AdminApi {
       await wait();
       const tq = f.tag_q?.trim().toLowerCase();
       const items = questions
-        .filter((q) => (!f.status || q.status === f.status) && (!f.category || q.category === f.category) && (!f.language || q.language === f.language) && (!f.service_id || q.context?.service_id === f.service_id))
+        .filter((q) => (!f.status || q.status === f.status) && (!f.category || q.category === f.category) && (!f.tag || q.tags.some((tag) => tag.toLowerCase() === f.tag!.toLowerCase())) && (!f.language || q.language === f.language) && (!f.service_id || q.context?.service_id === f.service_id))
         .filter((q) => !tq || q.tags.some((t) => t.toLowerCase().includes(tq)))  // 固定標籤和手動標籤都會被搜尋到
-        .sort((a, b) => b.created_at.localeCompare(a.created_at))
-        .map(summary);
-      return { items, next: null };
+        .sort((a, b) => b.created_at.localeCompare(a.created_at));
+      return { items: clone(items), next: null };
     },
 
     async getQuestion(id) {
@@ -351,10 +353,9 @@ export function createMockAdminApi(): AdminApi {
       await wait();
       const q = findQ(id);
       if (hasPendingTextPii(id)) throw new ApiError(409, "PII_PENDING", PII_PENDING_MESSAGE);
-      const before = { title: q.title, body: q.body };
-      if (patch.title !== undefined) q.title = patch.title;
-      if (patch.body !== undefined) q.body = patch.body;
-      log("question.edit", "question", id, { before, after: { title: q.title, body: q.body } });
+      const before = { body: q.body };
+      q.body = patch.body;
+      log("question.edit", "question", id, { before, after: { body: q.body } });
       return clone(q);
     },
 

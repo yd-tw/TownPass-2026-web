@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { META } from "@/app/ui/line/api/mock-api";
 import type { CategoryId } from "@/app/ui/line/api/types";
-import type { AdminApi, PiiReport, PiiStatus, QuestionSummary } from "../api";
+import type { AdminApi, PiiReport, PiiStatus, QuestionDetail } from "../api";
 import {
   Badge,
   Button,
@@ -19,6 +18,7 @@ import {
   errorText,
   formatTime,
   timeAgo,
+  useAdminMeta,
   usePaged,
   useToast,
 } from "../ui";
@@ -55,9 +55,9 @@ export function PendingSection({ api }: { api: AdminApi }) {
   );
 }
 
-const CLASSIFY_OPTIONS = META.categories.filter((c) => c.id !== "uncategorized").map((c) => [c.id, c.label] as const);
-
 function Classify({ api, onOpen }: { api: AdminApi; onOpen: (id: string) => void }) {
+  const meta = useAdminMeta();
+  const options = meta.categories.filter((c) => c.id !== "uncategorized").map((c) => [c.id, c.label] as const);
   const list = usePaged((cursor) => api.listQuestions({ category: "uncategorized" }, cursor), [api]);
   return (
     <>
@@ -70,7 +70,7 @@ function Classify({ api, onOpen }: { api: AdminApi; onOpen: (id: string) => void
         ) : (
           <ul className="divide-y divide-tp-gray-100">
             {list.items.map((q) => (
-              <ClassifyRow key={q.id} api={api} q={q} onOpen={onOpen} onDone={() => list.setItems((x) => x.filter((y) => y.id !== q.id))} />
+              <ClassifyRow key={q.id} api={api} q={q} options={options} onOpen={onOpen} onDone={() => list.setItems((x) => x.filter((y) => y.id !== q.id))} />
             ))}
           </ul>
         )}
@@ -80,22 +80,22 @@ function Classify({ api, onOpen }: { api: AdminApi; onOpen: (id: string) => void
   );
 }
 
-function ClassifyRow({ api, q, onOpen, onDone }: { api: AdminApi; q: QuestionSummary; onOpen: (id: string) => void; onDone: () => void }) {
+function ClassifyRow({ api, q, options, onOpen, onDone }: { api: AdminApi; q: QuestionDetail; options: readonly (readonly [CategoryId, string])[]; onOpen: (id: string) => void; onDone: () => void }) {
   const [category, setCategory] = useState<CategoryId>("other");
   const [busy, setBusy] = useState(false);
   const notify = useToast();
   return (
     <li className="flex flex-wrap items-center gap-3 px-5 py-3.5">
       <div className="min-w-0 flex-1">
-        <button type="button" onClick={() => onOpen(q.id)} className="text-left font-semibold hover:text-tp-primary-500">
-          {q.title ?? "（標題待確認）"}
+        <button type="button" onClick={() => onOpen(q.id)} className="line-clamp-2 break-words text-left font-semibold hover:text-tp-primary-500">
+          {q.body ?? (q.hidden_parts.some((part) => part.part === "body") ? "（內文待個資確認）" : q.media.length > 0 ? "（只有附件）" : "（沒有文字內容）")}
         </button>
         <p className="mt-0.5 text-xs text-tp-gray-500">
           {q.author.nickname} · {timeAgo(q.created_at)}
           {q.context && ` · ${q.context.service_name}${q.context.page_title ? `／${q.context.page_title}` : ""}`}
         </p>
       </div>
-      <Select label={`「${q.title ?? q.id}」的分類`} value={category} onChange={setCategory} options={CLASSIFY_OPTIONS} />
+      <Select label="選擇固定標籤" value={category} onChange={setCategory} options={options} />
       <Button
         variant="primary"
         busy={busy}
@@ -103,7 +103,7 @@ function ClassifyRow({ api, q, onOpen, onDone }: { api: AdminApi; q: QuestionSum
           setBusy(true);
           try {
             await api.setCategory(q.id, category);
-            notify(`已分類為「${CLASSIFY_OPTIONS.find((c) => c[0] === category)?.[1]}」`);
+            notify(`已分類為「${options.find((c) => c[0] === category)?.[1]}」`);
             onDone();
           } catch (e) {
             notify(errorText(e), "error");

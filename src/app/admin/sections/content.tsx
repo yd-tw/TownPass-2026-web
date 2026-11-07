@@ -2,8 +2,6 @@
 
 import { EyeOff, Search, X } from "lucide-react";
 import { useState } from "react";
-import { META } from "@/app/ui/line/api/mock-api";
-import type { CategoryId } from "@/app/ui/line/api/types";
 import { questionManualTags } from "@/app/ui/line/categories";
 import type { AdminApi, QuestionFilter, QuestionStatus } from "../api";
 import {
@@ -19,6 +17,7 @@ import {
   StatusBadge,
   SystemTagBadge,
   timeAgo,
+  useAdminMeta,
   usePaged,
 } from "../ui";
 import { QuestionPanel } from "./question-panel";
@@ -26,6 +25,7 @@ import { QuestionPanel } from "./question-panel";
 const LANGUAGE_LABEL: Record<string, string> = { "zh-TW": "中文", en: "English", ja: "日本語", ko: "한국어", vi: "Tiếng Việt", id: "Bahasa Indonesia", th: "ไทย", tl: "Tagalog" };
 
 export function ContentSection({ api, initialFilter }: { api: AdminApi; initialFilter: QuestionFilter }) {
+  const meta = useAdminMeta();
   const [filter, setFilter] = useState<QuestionFilter>(initialFilter);
   const [tagInput, setTagInput] = useState(initialFilter.tag_q ?? "");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -46,16 +46,16 @@ export function ContentSection({ api, initialFilter }: { api: AdminApi; initialF
           options={[["", "全部狀態"], ["open", "未解決"], ["in_progress", "協助中"], ["resolved", "已解決"]]}
         />
         <Select
-          label="固定標籤"
-          value={filter.category ?? ""}
-          onChange={(v) => set({ category: (v || undefined) as CategoryId | undefined })}
-          options={[["", "全部固定標籤"], ...META.categories.map((c) => [c.id, c.label] as [string, string])]}
+          label="常用標籤"
+          value={filter.tag ?? ""}
+          onChange={(v) => set({ tag: v || undefined })}
+          options={[["", "全部標籤"], ...meta.categories.map((c) => [c.label, c.label] as [string, string])]}
         />
         <Select
           label="語言"
           value={filter.language ?? ""}
           onChange={(v) => set({ language: v || undefined })}
-          options={[["", "全部語言"], ...META.languages.map((l) => [l, LANGUAGE_LABEL[l] ?? l] as [string, string])]}
+          options={[["", "全部語言"], ...meta.languages.map((l) => [l, LANGUAGE_LABEL[l] ?? l] as [string, string])]}
         />
         <form
           className="flex items-center gap-1.5"
@@ -117,8 +117,8 @@ export function ContentSection({ api, initialFilter }: { api: AdminApi; initialF
                 {list.items.map((q) => (
                   <tr key={q.id} onClick={() => setOpenId(q.id)} className="cursor-pointer border-b border-tp-gray-100 last:border-0 hover:bg-tp-primary-50/50">
                     <td className="max-w-md py-3 pl-5">
-                      <button type="button" onClick={(e) => { e.stopPropagation(); setOpenId(q.id); }} className="text-left font-semibold text-tp-gray-900 hover:text-tp-primary-500">
-                        {q.title ?? "（標題待確認）"}
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setOpenId(q.id); }} className="line-clamp-2 break-words text-left font-semibold text-tp-gray-900 hover:text-tp-primary-500">
+                        {q.body ?? (q.hidden_parts.some((part) => part.part === "body") ? "（內文待個資確認）" : q.media.length > 0 ? "（只有附件）" : "（沒有文字內容）")}
                       </button>
                       <div className="mt-1 flex flex-wrap items-center gap-1">
                         <SystemTagBadge q={q} />

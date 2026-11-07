@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from "react";
 import { cn } from "@/lib/utils";
+import { META } from "@/app/ui/line/api/mock-api";
 import { clearSession, createAdminApi, login, readSession, type AdminApi, type AdminSession, type QuestionFilter } from "./api";
 import { createMockAdminApi } from "./mock-api";
 import { AnalyticsSection } from "./sections/analytics";
@@ -23,7 +24,7 @@ import { CacheSection } from "./sections/cache";
 import { ContentSection } from "./sections/content";
 import { PendingSection } from "./sections/pending";
 import { UsersSection } from "./sections/users";
-import { Button, ToastProvider, errorText, inputClass } from "./ui";
+import { AdminMetaProvider, Button, ErrorBox, Loading, ToastProvider, errorText, inputClass, useAsync } from "./ui";
 
 export type SectionId = "analytics" | "snapshot" | "pending" | "content" | "users" | "cache" | "audit";
 
@@ -141,6 +142,7 @@ function readHash(): SectionId {
 
 function AdminShell({ api, onLogout }: { api: AdminApi; onLogout: () => void }) {
   const [section, setSection] = useState<SectionId>(readHash);
+  const meta = useAsync(() => api.getMeta(), [api]);
   /** 從頁面分析點進內容管理時帶過去的篩選 */
   const [contentFilter, setContentFilter] = useState<QuestionFilter>({});
 
@@ -206,6 +208,8 @@ function AdminShell({ api, onLogout }: { api: AdminApi; onLogout: () => void }) 
 
       <main className="min-w-0 flex-1 px-4 py-5 lg:px-8 lg:py-7">
         <div className="mx-auto max-w-6xl">
+          {meta.error && <ErrorBox message={`無法讀取選項資料：${meta.error}`} onRetry={meta.reload} />}
+          {meta.loading && !meta.data ? <Loading /> : <AdminMetaProvider value={meta.data ?? META}>
           {section === "analytics" && (
             <AnalyticsSection
               api={api}
@@ -221,6 +225,7 @@ function AdminShell({ api, onLogout }: { api: AdminApi; onLogout: () => void }) 
           {section === "users" && <UsersSection api={api} />}
           {section === "cache" && <CacheSection api={api} />}
           {section === "audit" && <AuditSection api={api} />}
+          </AdminMetaProvider>}
         </div>
       </main>
     </div>
