@@ -14,14 +14,14 @@ import type { CategoryId } from "./api/types";
 
 /** 分類的圖示與顏色（文字標籤以 GET /meta 為準） */
 export const CATEGORY_STYLE: Record<CategoryId, { icon: LucideIcon; color: string }> = {
-  map_navigation: { icon: MapPin, color: "#6a9bcc" },
-  admin_procedure: { icon: Landmark, color: "#788c5d" },
-  document_contract: { icon: FileText, color: "#c6613f" },
-  scam_check: { icon: ShieldAlert, color: "#b4442a" },
-  app_usage: { icon: Smartphone, color: "#d97757" },
-  language: { icon: Languages, color: "#5f7149" },
-  other: { icon: CircleHelp, color: "#8a8780" },
-  uncategorized: { icon: CircleDashed, color: "#8a8780" },
+  map_navigation: { icon: MapPin, color: "#468d9b" },
+  admin_procedure: { icon: Landmark, color: "#22474e" },
+  document_contract: { icon: FileText, color: "#ad7b2b" },
+  scam_check: { icon: ShieldAlert, color: "#c2332f" },
+  app_usage: { icon: Smartphone, color: "#e6692c" },
+  language: { icon: Languages, color: "#356c77" },
+  other: { icon: CircleHelp, color: "#738995" },
+  uncategorized: { icon: CircleDashed, color: "#738995" },
 };
 
 export function categoryLabel(id: CategoryId) {

@@ -136,17 +136,68 @@
   }
 }
 
-/* Claude（Anthropic 品牌）配色，LINE 風格聊天室使用 */
+/*
+ * 城市通（Town Pass）配色，取自官方開源專案 taipei-doit/TownPass 的 lib/util/tp_colors.dart
+ * （Figma：Town Pass Open Source Gov Mobile App UI Kit and Design System）。
+ * 長輩友善的用法：
+ * - 白字的實心按鈕、強調文字用 primary-700（對白底 5.9:1）；品牌色 primary-500 對白底只有 2.4:1，
+ *   只拿來當淡色底、外框、進度圈等不承載文字的地方
+ * - 一般文字用 gray-600 以上（對白底 5.3:1）
+ */
 @theme {
-  --color-claude: #d97757;
-  --color-claude-dark: #c6613f;
-  --color-claude-ink: #141413;
-  --color-claude-ivory: #faf9f5;
-  --color-claude-cream: #f0eee6;
-  --color-claude-sand: #e8e6dc;
-  /* 自己的泡泡：淺橘底配深色字（對比約 11:1） */
-  --color-claude-peach: #f3cbb6;
-  --color-claude-gray: #b0aea5;
-  --color-claude-blue: #6a9bcc;
-  --color-claude-green: #788c5d;
+  --color-tp-primary-50: #EDF8FA;
+  --color-tp-primary-100: #DBF1F5;
+  --color-tp-primary-200: #B4E2EA;
+  --color-tp-primary-300: #93D4DF;
+  --color-tp-primary-400: #71C5D5;
+  --color-tp-primary-500: #5AB4C5;
+  --color-tp-primary-600: #468D9B;
+  --color-tp-primary-700: #356C77;
+  --color-tp-primary-800: #22474E;
+  --color-tp-primary-900: #112629;
+  --color-tp-primary-950: #081315;
+  --color-tp-secondary-50: #FDF8ED;
+  --color-tp-secondary-100: #FCF2DF;
+  --color-tp-secondary-200: #F8E3BC;
+  --color-tp-secondary-300: #F4D69E;
+  --color-tp-secondary-400: #F0C87C;
+  --color-tp-secondary-500: #F5BA4B;
+  --color-tp-secondary-600: #E7A43C;
+  --color-tp-secondary-700: #AD7B2B;
+  --color-tp-secondary-800: #74521B;
+  --color-tp-secondary-900: #3C2B0B;
+  --color-tp-secondary-950: #1C1304;
+  --color-tp-gray-50: #F1F3F4;
+  --color-tp-gray-100: #E3E7E9;
+  --color-tp-gray-200: #CAD1D5;
+  --color-tp-gray-300: #ADB8BE;
+  --color-tp-gray-400: #91A0A8;
+  --color-tp-gray-500: #738995;
+  --color-tp-gray-600: #5E6D76;
+  --color-tp-gray-700: #475259;
+  --color-tp-gray-800: #30383D;
+  --color-tp-gray-900: #171B1D;
+  --color-tp-gray-950: #0B0D0E;
+  --color-tp-red-50: #FAEEEE;
+  --color-tp-red-100: #F5DCDD;
+  --color-tp-red-200: #EBB6B6;
+  --color-tp-red-300: #E29494;
+  --color-tp-red-400: #D45251;
+  --color-tp-red-500: #D45251;
+  --color-tp-red-600: #C2332F;
+  --color-tp-red-700: #912522;
+  --color-tp-red-800: #5F1715;
+  --color-tp-red-900: #310B0B;
+  --color-tp-red-950: #180505;
+  --color-tp-orange-50: #FDF3EC;
+  --color-tp-orange-100: #FBE7D9;
+  --color-tp-orange-200: #F7CFB2;
+  --color-tp-orange-300: #F4B992;
+  --color-tp-orange-400: #F1A26D;
+  --color-tp-orange-500: #FD853A;
+  --color-tp-orange-600: #E6692C;
+  --color-tp-orange-700: #AE501F;
+  --color-tp-orange-800: #713311;
+  --color-tp-orange-900: #391A06;
+  --color-tp-orange-950: #1C0C02;
 }

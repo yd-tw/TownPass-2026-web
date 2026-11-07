@@ -45,9 +45,9 @@ import type { Notify, Outgoing, QuestionPrefs } from "./types";
 import { useBackLayer } from "./use-back-layer";
 import { useLongPress } from "./use-long-press";
 
-const CHAT_BG = "#f0eee6";
+const CHAT_BG = "var(--color-tp-gray-100)";
 /** 自己的泡泡：淺橘底配深色字（像 LINE 的淺綠底黑字），對比約 11:1 */
-const SELF_BUBBLE = "var(--color-claude-peach)";
+const SELF_BUBBLE = "var(--color-tp-primary-200)";
 const GROUP_GAP = 5 * 60 * 1000;
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
@@ -350,9 +350,9 @@ export function ChatRoom(props: ChatRoomProps) {
   const banner = !question
     ? null
     : question.status === "resolved"
-      ? { text: "這個問題已經解決了", className: "bg-claude-green/15 text-claude-green" }
+      ? { text: "這個問題已經解決了", className: "bg-tp-gray-500/15 text-tp-gray-700" }
       : !isAuthor
-        ? { text: "加入討論，分享你的回答", className: "bg-claude-sand text-stone-600" }
+        ? { text: "加入討論，分享你的回答", className: "bg-tp-gray-100 text-tp-gray-700" }
         : null;
 
   const subtitle = !question
@@ -385,7 +385,7 @@ export function ChatRoom(props: ChatRoomProps) {
             type="button"
             onClick={props.onBack}
             aria-label="返回聊天列表"
-            className="flex h-12 min-w-12 shrink-0 items-center rounded-full pr-1.5 text-stone-900 hover:bg-black/5"
+            className="flex h-12 min-w-12 shrink-0 items-center rounded-full pr-1.5 text-tp-gray-950 hover:bg-black/5"
           >
             <ChevronLeft className="size-8" />
             {props.unreadElsewhere > 0 && (
@@ -395,7 +395,7 @@ export function ChatRoom(props: ChatRoomProps) {
             )}
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="flex items-center gap-1 text-[17px] leading-tight font-bold text-stone-900">
+            <h1 className="flex items-center gap-1 text-[17px] leading-tight font-bold text-tp-gray-950">
               <span className="truncate">
                 {question ? "討論串" : "新問題"}
               </span>
@@ -404,7 +404,7 @@ export function ChatRoom(props: ChatRoomProps) {
                 <BellOff className="size-4 shrink-0" aria-label="已關閉提醒" />
               )}
             </h1>
-            <p className="truncate text-[13px] text-stone-600">{subtitle}</p>
+            <p className="truncate text-[13px] text-tp-gray-700">{subtitle}</p>
           </div>
           {question && (
             <IconButton label="問題選單" onClick={() => setDrawerOpen(true)}>
@@ -414,13 +414,13 @@ export function ChatRoom(props: ChatRoomProps) {
         </header>
 
       {question && !isAuthor && question.category === "uncategorized" && (
-        <div className="mx-3 mb-2 flex shrink-0 items-center gap-2 rounded-xl bg-white px-3 py-2 ring-1 ring-claude-sand">
-          <Tag className="size-5 shrink-0 text-claude-dark" />
-          <span className="min-w-0 flex-1 text-[15px] text-claude-ink">這題還沒有分類</span>
+        <div className="mx-3 mb-2 flex shrink-0 items-center gap-2 rounded-xl bg-white px-3 py-2 ring-1 ring-tp-gray-100">
+          <Tag className="size-5 shrink-0 text-tp-primary-700" />
+          <span className="min-w-0 flex-1 text-[15px] text-tp-gray-900">這題還沒有分類</span>
           <button
             type="button"
             onClick={() => setClassifyOpen(true)}
-            className="min-h-10 shrink-0 rounded-full bg-claude px-4 text-[15px] font-bold text-white active:bg-claude-dark"
+            className="min-h-10 shrink-0 rounded-full bg-tp-primary-700 px-4 text-[15px] font-bold text-white active:bg-tp-primary-800"
           >
             幫忙分類
           </button>
@@ -430,7 +430,7 @@ export function ChatRoom(props: ChatRoomProps) {
         <Sheet onClose={() => setClassifyOpen(false)}>
           <div className="px-5 pt-5 pb-4">
             <h2 className="text-center text-[19px] font-bold">這題是關於什麼？</h2>
-            <p className="mt-1 text-center text-[14px] text-stone-600">選一個最接近的，選了之後就不能再改</p>
+            <p className="mt-1 text-center text-[14px] text-tp-gray-700">選一個最接近的，選了之後就不能再改</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
               {/* 「未分類」不能選，送出會回 400 */}
               {META.categories
@@ -443,7 +443,7 @@ export function ChatRoom(props: ChatRoomProps) {
                       setClassifyOpen(false);
                       props.onClassify(c.id);
                     }}
-                    className="min-h-12 rounded-xl bg-white px-3 text-[16px] font-medium text-claude-ink ring-1 ring-claude-sand active:bg-claude-sand/50"
+                    className="min-h-12 rounded-xl bg-white px-3 text-[16px] font-medium text-tp-gray-900 ring-1 ring-tp-gray-100 active:bg-tp-gray-100/50"
                   >
                     {c.label}
                   </button>
@@ -452,7 +452,7 @@ export function ChatRoom(props: ChatRoomProps) {
             <button
               type="button"
               onClick={() => setClassifyOpen(false)}
-              className="mt-2 w-full py-3 text-[17px] text-stone-600"
+              className="mt-2 w-full py-3 text-[17px] text-tp-gray-700"
             >
               取消
             </button>
@@ -463,7 +463,7 @@ export function ChatRoom(props: ChatRoomProps) {
       {banner && <p className={cn("flex shrink-0 items-center justify-center gap-1.5 px-3 py-2 text-center text-[15px] font-medium", banner.className)}>
         {question?.status === "resolved" && <CircleCheckBig className="size-4" />}{banner.text}
       </p>}
-      {canResolve && <button type="button" onClick={resolve} disabled={resolving} className="mx-3 mb-2 flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-claude/15 px-3 text-[15px] font-semibold text-claude-dark disabled:opacity-50">
+      {canResolve && <button type="button" onClick={resolve} disabled={resolving} className="mx-3 mb-2 flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-tp-primary-500/15 px-3 text-[15px] font-semibold text-tp-primary-700 disabled:opacity-50">
         {resolving ? <LoaderCircle className="size-5 animate-spin" /> : <CircleCheckBig className="size-5" />}
         標記為已解決
       </button>}
@@ -481,7 +481,7 @@ export function ChatRoom(props: ChatRoomProps) {
                 key={item.key}
                 className="my-3 flex justify-center"
               >
-                <span className="rounded-full bg-claude-sand px-3 py-0.5 text-[12px] text-stone-700">
+                <span className="rounded-full bg-tp-gray-100 px-3 py-0.5 text-[12px] text-tp-gray-800">
                   {item.label}
                 </span>
               </div>
@@ -493,7 +493,7 @@ export function ChatRoom(props: ChatRoomProps) {
                 key={item.key}
                 className="my-3 flex justify-center px-4"
               >
-                <span className="rounded-2xl bg-claude-sand px-4 py-2.5 text-center text-[15px] leading-relaxed whitespace-pre-wrap text-stone-700">
+                <span className="rounded-2xl bg-tp-gray-100 px-4 py-2.5 text-center text-[15px] leading-relaxed whitespace-pre-wrap text-tp-gray-800">
                   {item.text}
                 </span>
               </div>
@@ -506,7 +506,7 @@ export function ChatRoom(props: ChatRoomProps) {
                 data-unread-marker
                 className="my-3 flex justify-center"
               >
-                <span className="rounded-full bg-claude/12 px-3 py-1 text-[12px] font-medium text-claude-dark">
+                <span className="rounded-full bg-tp-primary-500/12 px-3 py-1 text-[12px] font-medium text-tp-primary-700">
                   以下為新回答
                 </span>
               </div>
@@ -526,7 +526,7 @@ export function ChatRoom(props: ChatRoomProps) {
         })}
         {sending && (
           <div className="mt-3 flex justify-end">
-            <span className="flex items-center gap-1.5 rounded-full bg-claude/15 px-3 py-1.5 text-[13px] text-claude-dark">
+            <span className="flex items-center gap-1.5 rounded-full bg-tp-primary-500/15 px-3 py-1.5 text-[13px] text-tp-primary-700">
               <LoaderCircle className="size-3.5 animate-spin" />
               傳送中…
             </span>
@@ -541,7 +541,7 @@ export function ChatRoom(props: ChatRoomProps) {
           onClick={() =>
             listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" })
           }
-          className="absolute right-3 bottom-24 z-10 flex size-11 items-center justify-center rounded-full bg-claude-ivory text-stone-700 shadow-md ring-1 ring-claude-sand"
+          className="absolute right-3 bottom-24 z-10 flex size-11 items-center justify-center rounded-full bg-tp-gray-50 text-tp-gray-800 shadow-md ring-1 ring-tp-gray-100"
         >
           <ChevronDown className="size-5" />
         </button>
@@ -561,24 +561,24 @@ export function ChatRoom(props: ChatRoomProps) {
           }}
         />
       ) : (
-        <div className="relative shrink-0 border-t border-claude-sand bg-claude-ivory px-1.5 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <div className="relative shrink-0 border-t border-tp-gray-100 bg-tp-gray-50 px-1.5 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           {/* 發問選項：浮在「…」上方，從下面滑出來 */}
           {!question && draftOptionsOpen && (
-            <div className="absolute bottom-full left-2 z-10 mb-2 w-[min(20rem,calc(100%-1rem))] rounded-2xl bg-white p-3 shadow-xl ring-1 ring-claude-sand animate-in fade-in slide-in-from-bottom-4 duration-200">
-              <label className="flex items-center justify-between gap-3 text-[15px] text-claude-ink">
-                <span><strong className="block">通知附近使用者</strong><span className="block text-[12px] text-stone-500">提供概略位置，讓附近的人看到問題</span></span>
-                <input type="checkbox" checked={props.locationSharing !== "off"} onChange={(event) => props.onLocationSharingChange(event.target.checked ? "approximate" : "off")} className="size-5 accent-claude" />
+            <div className="absolute bottom-full left-2 z-10 mb-2 w-[min(20rem,calc(100%-1rem))] rounded-2xl bg-white p-3 shadow-xl ring-1 ring-tp-gray-100 animate-in fade-in slide-in-from-bottom-4 duration-200">
+              <label className="flex items-center justify-between gap-3 text-[15px] text-tp-gray-900">
+                <span><strong className="block">通知附近使用者</strong><span className="block text-[12px] text-tp-gray-600">提供概略位置，讓附近的人看到問題</span></span>
+                <input type="checkbox" checked={props.locationSharing !== "off"} onChange={(event) => props.onLocationSharingChange(event.target.checked ? "approximate" : "off")} className="size-5 accent-tp-primary-500" />
               </label>
             </div>
           )}
           {attachmentMenuOpen && (
-            <div className="absolute bottom-full left-2 z-10 mb-2 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-claude-sand">
+            <div className="absolute bottom-full left-2 z-10 mb-2 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-tp-gray-100">
               {([
                 ["camera", "拍照", Camera],
                 ["gallery", "從相簿選照片", ImageIcon],
                 ["video", "傳送影片", Video],
               ] as const).map(([kind, label, Icon]) => (
-                <button key={label} type="button" onClick={() => { setAttachmentMenuOpen(false); if (kind === "camera") cameraRef.current?.click(); else if (kind === "gallery") galleryRef.current?.click(); else videoRef.current?.click(); }} className="flex min-h-11 items-center gap-2 px-4 text-left text-[15px] text-claude-ink hover:bg-claude-sand/50">
+                <button key={label} type="button" onClick={() => { setAttachmentMenuOpen(false); if (kind === "camera") cameraRef.current?.click(); else if (kind === "gallery") galleryRef.current?.click(); else videoRef.current?.click(); }} className="flex min-h-11 items-center gap-2 px-4 text-left text-[15px] text-tp-gray-900 hover:bg-tp-gray-100/50">
                   <Icon className="size-5 shrink-0" />{label}
                 </button>
               ))}
@@ -587,7 +587,7 @@ export function ChatRoom(props: ChatRoomProps) {
           <div className="flex min-w-0 items-end gap-0.5">
           {!question && <IconButton label="發問額外選項" onClick={() => { setAttachmentMenuOpen(false); setDraftOptionsOpen((open) => !open); }} className="max-[300px]:size-10"><MoreHorizontal className="size-6" /></IconButton>}
           <IconButton label="新增附件" disabled={sending} onClick={() => { setDraftOptionsOpen(false); setAttachmentMenuOpen((open) => !open); }} className="max-[300px]:size-10"><Plus className="size-7" /></IconButton>
-          <div className="mx-1 flex min-h-12 min-w-0 flex-1 items-end rounded-[24px] bg-claude-sand/70 px-4 max-[300px]:px-2">
+          <div className="mx-1 flex min-h-12 min-w-0 flex-1 items-end rounded-[24px] bg-tp-gray-100/70 px-4 max-[300px]:px-2">
             <textarea
               rows={1}
               value={text}
@@ -596,13 +596,13 @@ export function ChatRoom(props: ChatRoomProps) {
               onKeyDown={handleKeyDown}
               placeholder={question ? "補充說明…" : "請輸入您的問題…"}
               aria-label={question ? "補充說明" : "輸入問題"}
-              className="field-sizing-content max-h-36 min-h-12 min-w-0 flex-1 resize-none bg-transparent py-3 text-[15px] leading-6 outline-none placeholder:text-stone-500"
+              className="field-sizing-content max-h-36 min-h-12 min-w-0 flex-1 resize-none bg-transparent py-3 text-[15px] leading-6 outline-none placeholder:text-tp-gray-600"
             />
           </div>
           {text.trim() ? (
             <IconButton
               label="傳送"
-              className="text-claude-dark"
+              className="text-tp-primary-700"
               disabled={sending}
               onClick={sendText}
             >
@@ -714,7 +714,7 @@ function PostRow({
       {(post.body !== null || post.hiddenBody) && (
         <TextBubble self={post.self} tail={first}>
           {post.hiddenBody ? (
-            <span className="text-stone-400 italic">內容待確認個資，暫時隱藏</span>
+            <span className="text-tp-gray-400 italic">內容待確認個資，暫時隱藏</span>
           ) : (
             post.body
           )}
@@ -740,7 +740,7 @@ function PostRow({
       onClick={() => onToggleLike(answer)}
       className={cn(
         "flex min-h-8 items-center gap-1.5 justify-self-start rounded-full px-2 text-[13px] transition-colors disabled:opacity-50",
-        answer.votes.my_vote === 1 ? "bg-claude/15 font-semibold text-claude-dark" : "text-stone-600 hover:bg-black/5",
+        answer.votes.my_vote === 1 ? "bg-tp-primary-500/15 font-semibold text-tp-primary-700" : "text-tp-gray-700 hover:bg-black/5",
       )}
     >
       <ThumbsUp className="size-4" fill={answer.votes.my_vote === 1 ? "currentColor" : "none"} />
@@ -748,7 +748,7 @@ function PostRow({
     </button>
   );
   const time = (
-    <span className="shrink-0 pb-0.5 text-[12px] leading-tight text-stone-500">
+    <span className="shrink-0 pb-0.5 text-[12px] leading-tight text-tp-gray-600">
       {formatClock(post.at)}
     </span>
   );
@@ -779,7 +779,7 @@ function PostRow({
       <div className="w-9 shrink-0 max-[300px]:hidden">{first && <Avatar name={post.authorName} size={36} />}</div>
       <div className="flex min-w-0 flex-col items-start">
         {first && (
-          <span className="mb-1 max-w-full truncate text-[13px] text-stone-700">
+          <span className="mb-1 max-w-full truncate text-[13px] text-tp-gray-800">
             {post.authorName}
           </span>
         )}
@@ -806,7 +806,7 @@ function TextBubble({
   return (
     <div
       className={cn(
-        "relative rounded-[18px] px-3.5 py-2.5 text-[15px] leading-snug wrap-break-word whitespace-pre-wrap text-claude-ink",
+        "relative rounded-[18px] px-3.5 py-2.5 text-[15px] leading-snug wrap-break-word whitespace-pre-wrap text-tp-gray-900",
         !self && "shadow-[0_1px_1px_rgb(20_20_19/0.06)]",
         tail && (self ? "rounded-tr-[4px]" : "rounded-tl-[4px]"),
       )}
@@ -859,7 +859,7 @@ function PostMenu({
       />
       <div
         role="menu"
-        className="absolute left-1/2 flex -translate-x-1/2 gap-1 rounded-2xl bg-claude-ivory p-1.5 shadow-xl ring-1 ring-black/5 animate-in zoom-in-95 fade-in"
+        className="absolute left-1/2 flex -translate-x-1/2 gap-1 rounded-2xl bg-tp-gray-50 p-1.5 shadow-xl ring-1 ring-black/5 animate-in zoom-in-95 fade-in"
         style={{ top }}
       >
         {actions.map(({ label, icon: Icon, run }) => (
@@ -871,7 +871,7 @@ function PostMenu({
               run();
               onClose();
             }}
-            className="flex w-18 flex-col items-center gap-1 rounded-xl py-2.5 text-[15px] text-stone-800 hover:bg-claude-sand/60"
+            className="flex w-18 flex-col items-center gap-1 rounded-xl py-2.5 text-[15px] text-tp-gray-900 hover:bg-tp-gray-100/60"
           >
             <Icon className="size-6" />
             {label}
@@ -925,7 +925,7 @@ function QuestionDrawer({
         onClick={onClose}
         className="absolute inset-0 cursor-default bg-black/40 animate-in fade-in"
       />
-      <aside className="absolute inset-y-0 right-0 flex w-[84%] flex-col bg-claude-ivory shadow-2xl animate-in duration-200 slide-in-from-right">
+      <aside className="absolute inset-y-0 right-0 flex w-[84%] flex-col bg-tp-gray-50 shadow-2xl animate-in duration-200 slide-in-from-right">
         <div className="flex justify-end p-2">
           <IconButton label="關閉" onClick={onClose}>
             <X className="size-7" />
@@ -937,31 +937,31 @@ function QuestionDrawer({
             {question.body ?? "（內容待確認）"}
           </p>
         </div>
-        <div className="grid grid-cols-2 border-y border-claude-sand/70 py-3">
+        <div className="grid grid-cols-2 border-y border-tp-gray-100/70 py-3">
           {quick.map(({ label, icon: Icon, run }) => (
             <button
               key={label}
               type="button"
               onClick={run}
-              className="flex min-h-16 flex-col items-center justify-center gap-1 text-[15px] text-stone-700"
+              className="flex min-h-16 flex-col items-center justify-center gap-1 text-[15px] text-tp-gray-800"
             >
-              <Icon className="size-7 text-stone-800" />
+              <Icon className="size-7 text-tp-gray-900" />
               {label}
             </button>
           ))}
         </div>
         <dl className="flex-1 overflow-y-auto px-5 py-2">
           {rows.map(([k, v]) => (
-            <div key={k} className="flex justify-between border-b border-claude-sand/60 py-3 text-[15px]">
-              <dt className="text-stone-500">{k}</dt>
-              <dd className="font-medium text-claude-ink">{v}</dd>
+            <div key={k} className="flex justify-between border-b border-tp-gray-100/60 py-3 text-[15px]">
+              <dt className="text-tp-gray-600">{k}</dt>
+              <dd className="font-medium text-tp-gray-900">{v}</dd>
             </div>
           ))}
         </dl>
         {isAuthor && <button
           type="button"
           onClick={onWithdraw}
-          className="border-t border-claude-sand/70 py-4 text-[15px] text-red-600 hover:bg-red-50"
+          className="border-t border-tp-gray-100/70 py-4 text-[15px] text-tp-red-600 hover:bg-tp-red-50"
         >
           撤回問題
         </button>}
@@ -990,15 +990,15 @@ function ConfirmDialog({
       <div
         role="alertdialog"
         aria-label={title}
-        className="w-full max-w-sm rounded-2xl bg-claude-ivory p-5 shadow-xl animate-in zoom-in-95"
+        className="w-full max-w-sm rounded-2xl bg-tp-gray-50 p-5 shadow-xl animate-in zoom-in-95"
       >
         <h2 className="text-center text-[17px] leading-snug font-bold">{title}</h2>
-        <p className="mt-2 text-center text-[15px] text-stone-700">{body}</p>
+        <p className="mt-2 text-center text-[15px] text-tp-gray-800">{body}</p>
         <div className="mt-5 grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="min-h-12 rounded-xl bg-claude-sand py-3 text-[15px] font-medium text-stone-800"
+            className="min-h-12 rounded-xl bg-tp-gray-100 py-3 text-[15px] font-medium text-tp-gray-900"
           >
             取消
           </button>
@@ -1007,7 +1007,7 @@ function ConfirmDialog({
             onClick={onConfirm}
             className={cn(
               "min-h-12 rounded-xl py-3 text-[15px] font-bold text-white",
-              danger ? "bg-red-600" : "bg-claude-dark",
+              danger ? "bg-tp-red-600" : "bg-tp-primary-700",
             )}
           >
             {confirmLabel}

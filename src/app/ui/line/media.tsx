@@ -18,7 +18,7 @@ export function ImageBubble({
     <button
       type="button"
       onClick={() => onOpen(media.url)}
-      className="block overflow-hidden rounded-2xl bg-claude-sand shadow-sm"
+      className="block overflow-hidden rounded-2xl bg-tp-gray-100 shadow-sm"
       aria-label="放大照片"
     >
       {/* blob: 與 data: 網址不能交給 next/image 最佳化 */}
@@ -36,7 +36,7 @@ export function ImageBubble({
 export function Lightbox({ url, onClose }: { url: string; onClose: () => void }) {
   return (
     <div
-      className="absolute inset-0 z-50 flex items-center justify-center bg-claude-ink/95 animate-in fade-in"
+      className="absolute inset-0 z-50 flex items-center justify-center bg-tp-gray-900/95 animate-in fade-in"
       onClick={onClose}
       role="dialog"
       aria-label="照片"
@@ -84,9 +84,9 @@ export function AudioBubble({ media, self }: { media: Media; self: boolean }) {
   return (
     <div
       className={cn(
-        "flex items-center gap-2.5 rounded-[18px] py-2 pr-4 pl-2 text-claude-ink",
+        "flex items-center gap-2.5 rounded-[18px] py-2 pr-4 pl-2 text-tp-gray-900",
         // 自己的語音用跟文字泡泡一樣的淺橘底
-        self ? "bg-claude-peach" : "bg-white shadow-[0_1px_1px_rgb(20_20_19/0.06)]",
+        self ? "bg-tp-primary-200" : "bg-white shadow-[0_1px_1px_rgb(20_20_19/0.06)]",
       )}
     >
       <audio
@@ -111,7 +111,7 @@ export function AudioBubble({ media, self }: { media: Media; self: boolean }) {
         aria-label={playing ? "暫停語音" : "播放語音"}
         className={cn(
           "flex size-12 shrink-0 items-center justify-center rounded-full",
-          self ? "bg-white/60 text-claude-dark" : "bg-claude/15 text-claude-dark",
+          self ? "bg-white/60 text-tp-primary-700" : "bg-tp-primary-500/15 text-tp-primary-700",
         )}
       >
         {playing ? (
@@ -127,10 +127,10 @@ export function AudioBubble({ media, self }: { media: Media; self: boolean }) {
             className={cn(
               "w-[3px] rounded-full",
               i / bars.length < progress
-                ? "bg-claude-dark"
+                ? "bg-tp-primary-700"
                 : self
-                  ? "bg-claude-dark/30"
-                  : "bg-stone-300",
+                  ? "bg-tp-primary-700/30"
+                  : "bg-tp-gray-300",
             )}
             style={{ height: `${h}%` }}
           />
@@ -258,29 +258,29 @@ export function VoiceRecorder({
   }
 
   return (
-    <div className="flex shrink-0 items-center gap-3 border-t border-claude-sand bg-claude-ivory px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+    <div className="flex shrink-0 items-center gap-3 border-t border-tp-gray-100 bg-tp-gray-50 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       <button
         type="button"
         onClick={cancel}
         aria-label="取消錄音"
-        className="flex size-14 shrink-0 items-center justify-center rounded-full bg-claude-sand text-stone-700"
+        className="flex size-14 shrink-0 items-center justify-center rounded-full bg-tp-gray-100 text-tp-gray-800"
       >
         <Trash2 className="size-7" />
       </button>
       <div className="flex min-w-0 flex-1 flex-col items-center">
-        <span className="flex items-center gap-2 text-[20px] font-semibold tabular-nums text-claude-ink">
+        <span className="flex items-center gap-2 text-[20px] font-semibold tabular-nums text-tp-gray-900">
           <span
             className={cn(
-              "size-3 rounded-full bg-red-500",
+              "size-3 rounded-full bg-tp-red-500",
               recording && "animate-pulse",
             )}
           />
           {formatDuration(elapsed)}
-          <span className="text-[15px] font-normal text-stone-500">
+          <span className="text-[15px] font-normal text-tp-gray-600">
             / {formatDuration(maxSeconds)}
           </span>
         </span>
-        <span className="text-[15px] text-stone-600">
+        <span className="text-[15px] text-tp-gray-700">
           {recording ? "說完請按右邊的傳送" : "準備麥克風…"}
         </span>
       </div>
@@ -289,7 +289,7 @@ export function VoiceRecorder({
         onClick={finish}
         disabled={!recording}
         aria-label="結束錄音並傳送"
-        className="flex size-14 shrink-0 items-center justify-center rounded-full bg-claude-dark text-white disabled:opacity-40"
+        className="flex size-14 shrink-0 items-center justify-center rounded-full bg-tp-primary-700 text-white disabled:opacity-40"
       >
         <SendHorizontal className="size-7" />
       </button>

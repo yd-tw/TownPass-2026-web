@@ -5,16 +5,16 @@ import { CATEGORY_STYLE } from "./categories";
 
 // Claude 品牌色及其深淺變化
 const PALETTE = [
-  "#d97757",
-  "#6a9bcc",
-  "#788c5d",
-  "#c6613f",
-  "#b0aea5",
-  "#4f7fae",
-  "#5f7149",
-  "#d4a27f",
-  "#8a8780",
-  "#a85a3c",
+  "#468d9b",
+  "#356c77",
+  "#22474e",
+  "#ad7b2b",
+  "#738995",
+  "#5e6d76",
+  "#e6692c",
+  "#ae501f",
+  "#475259",
+  "#c2332f",
 ];
 
 function hash(s: string) {
@@ -97,7 +97,7 @@ export function QuestionAvatar({
         src={q.thumbnail_url}
         alt=""
         aria-hidden
-        className="shrink-0 rounded-full bg-claude-sand object-cover"
+        className="shrink-0 rounded-full bg-tp-gray-100 object-cover"
         style={{ width: size, height: size }}
       />
     );
@@ -106,7 +106,7 @@ export function QuestionAvatar({
     return (
       <span
         aria-hidden
-        className="inline-flex shrink-0 items-center justify-center rounded-full bg-claude text-white"
+        className="inline-flex shrink-0 items-center justify-center rounded-full bg-tp-primary-700 text-white"
         style={{ width: size, height: size }}
       >
         <Mic style={{ width: size * 0.48, height: size * 0.48 }} />

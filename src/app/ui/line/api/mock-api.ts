@@ -54,7 +54,7 @@ function placeholderImage(label: string, tint: string) {
   const lines = Array.from(
     { length: 7 },
     (_, i) =>
-      `<rect x='150' y='${92 + i * 26}' width='${i % 3 === 2 ? 120 : 180}' height='9' rx='4' fill='#b0aea5'/>`,
+      `<rect x='150' y='${92 + i * 26}' width='${i % 3 === 2 ? 120 : 180}' height='9' rx='4' fill='#adb8be'/>`,
   ).join("");
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='480' height='360' viewBox='0 0 480 360'><rect width='480' height='360' fill='${tint}'/><rect x='120' y='40' width='240' height='280' rx='6' fill='#faf9f5' transform='rotate(-3 240 180)'/><g transform='rotate(-3 240 180)'><rect x='150' y='62' width='110' height='14' rx='4' fill='#d97757'/>${lines}</g><text x='240' y='345' text-anchor='middle' font-size='18' fill='#3d3929' font-family='sans-serif'>${label}</text></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
@@ -271,7 +271,7 @@ export function createMockApi(
         {
           id: makeId("m"),
           kind: "image",
-          url: placeholderImage("區公所來信", "#e8e6dc"),
+          url: placeholderImage("區公所來信", "#e3e7e9"),
           width: 480,
           height: 360,
         },
@@ -445,7 +445,7 @@ export function createMockApi(
             {
               id: makeId("m"),
               kind: "image",
-              url: placeholderImage("參考照片", "#c9dbeb"),
+              url: placeholderImage("參考照片", "#b4e2ea"),
               width: 480,
               height: 360,
             },

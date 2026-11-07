@@ -46,12 +46,12 @@ export default function LineApp() {
     () => false,
   );
   return (
-    <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-claude-ivory sm:h-[min(860px,calc(100dvh-2rem))] sm:w-[400px] sm:rounded-[2.25rem] sm:shadow-2xl sm:ring-1 sm:ring-black/10">
+    <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-tp-gray-50 sm:h-[min(860px,calc(100dvh-2rem))] sm:w-[400px] sm:rounded-[2.25rem] sm:shadow-2xl sm:ring-1 sm:ring-black/10">
       {mounted ? (
         <LineAppInner />
       ) : (
         <div className="flex flex-1 items-center justify-center">
-          <span className="size-8 animate-spin rounded-full border-3 border-claude border-t-transparent" />
+          <span className="size-8 animate-spin rounded-full border-3 border-tp-primary-500 border-t-transparent" />
         </div>
       )}
     </div>
@@ -169,23 +169,23 @@ function LineAppInner() {
     <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
       {conn.status === "connecting" ? (
         <>
-          <span className="size-10 animate-spin rounded-full border-4 border-claude border-t-transparent" />
-          <p className="text-[17px] text-stone-600">連線中…</p>
+          <span className="size-10 animate-spin rounded-full border-4 border-tp-primary-500 border-t-transparent" />
+          <p className="text-[17px] text-tp-gray-700">連線中…</p>
         </>
       ) : (
         <>
-          <p className="text-[19px] font-bold text-claude-ink">暫時連不上</p>
-          <p className="text-[16px] text-stone-600">
+          <p className="text-[19px] font-bold text-tp-gray-900">暫時連不上</p>
+          <p className="text-[16px] text-tp-gray-700">
             請確認網路有開，再按下面的按鈕試一次
           </p>
-          <p className="text-[13px] text-stone-400">{conn.message}</p>
+          <p className="text-[13px] text-tp-gray-400">{conn.message}</p>
           <button
             type="button"
             onClick={() => {
               setConn({ status: "connecting" });
               setAttempt((n) => n + 1);
             }}
-            className="mt-2 w-full max-w-xs rounded-2xl bg-claude py-4 text-[20px] font-bold text-white active:bg-claude-dark"
+            className="mt-2 w-full max-w-xs rounded-2xl bg-tp-primary-700 py-4 text-[20px] font-bold text-white active:bg-tp-primary-800"
           >
             重新連線
           </button>
@@ -674,12 +674,12 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
             className="absolute inset-x-0 bottom-24 z-60 flex justify-center px-4"
             role="alert"
           >
-            <div className="flex w-full max-w-sm items-center gap-3 rounded-2xl bg-claude-ink px-4 py-3 text-white shadow-xl animate-in fade-in zoom-in-95">
+            <div className="flex w-full max-w-sm items-center gap-3 rounded-2xl bg-tp-gray-900 px-4 py-3 text-white shadow-xl animate-in fade-in zoom-in-95">
               <p className="flex-1 text-[15px] leading-snug">{toast.text}</p>
               <button
                 type="button"
                 onClick={() => setToast(null)}
-                className="h-11 shrink-0 rounded-xl bg-white px-4 text-[15px] font-bold text-claude-ink"
+                className="h-11 shrink-0 rounded-xl bg-white px-4 text-[15px] font-bold text-tp-gray-900"
               >
                 知道了
               </button>
@@ -691,7 +691,7 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
             className="pointer-events-none absolute inset-x-0 bottom-24 z-60 flex justify-center px-6"
             role="status"
           >
-            <span className="rounded-2xl bg-claude-ink/90 px-5 py-3 text-center text-[15px] text-white animate-in fade-in zoom-in-95">
+            <span className="rounded-2xl bg-tp-gray-900/90 px-5 py-3 text-center text-[15px] text-white animate-in fade-in zoom-in-95">
               {toast.text}
             </span>
           </div>

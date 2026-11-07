@@ -41,9 +41,9 @@ export function ForumFeed({
   );
 
   return (
-    <div className="relative flex h-full flex-col bg-claude-ivory">
+    <div className="relative flex h-full flex-col bg-tp-gray-50">
       <div className="px-4 pt-4 pb-2">
-        <label className="flex h-11 items-center gap-2 rounded-xl bg-claude-sand/70 px-3.5 text-stone-500">
+        <label className="flex h-11 items-center gap-2 rounded-xl bg-tp-gray-100/70 px-3.5 text-tp-gray-600">
           <Search className="size-5 shrink-0" />
           <input
             aria-label="搜尋問題或標籤"
@@ -51,14 +51,14 @@ export function ForumFeed({
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             onKeyDown={(event) => { if (event.key === "Escape") setSearch(""); }}
-            className="min-w-0 flex-1 bg-transparent text-[15px] text-stone-900 outline-none placeholder:text-stone-500"
+            className="min-w-0 flex-1 bg-transparent text-[15px] text-tp-gray-950 outline-none placeholder:text-tp-gray-600"
           />
           {search && (
             <button
               type="button"
               aria-label="清除搜尋"
               onClick={() => setSearch("")}
-              className="flex size-8 items-center justify-center rounded-full bg-stone-400 text-white"
+              className="flex size-8 items-center justify-center rounded-full bg-tp-gray-400 text-white"
             >
               <X className="size-4" />
             </button>
@@ -81,8 +81,8 @@ export function ForumFeed({
             className={cn(
               "min-h-10 rounded-full border px-4 text-[15px] font-medium transition-colors",
               filter === id
-                ? "border-claude-ink bg-claude-ink text-claude-ivory"
-                : "border-claude-sand text-stone-700 hover:bg-claude-sand/40",
+                ? "border-tp-primary-700 bg-tp-primary-700 text-white"
+                : "border-tp-gray-100 text-tp-gray-800 hover:bg-tp-gray-100/40",
             )}
           >
             {label}
@@ -94,14 +94,14 @@ export function ForumFeed({
         <button
           type="button"
           onClick={onAsk}
-          className="w-full px-4 py-3 text-left hover:bg-claude-sand/35"
+          className="w-full px-4 py-3 text-left hover:bg-tp-gray-100/35"
         >
-          <span className="flex items-center gap-2.5"><Avatar name={nickname} size={40} /><span className="text-[15px] text-stone-500">有什麼問題？</span></span>
+          <span className="flex items-center gap-2.5"><Avatar name={nickname} size={40} /><span className="text-[15px] text-tp-gray-600">有什麼問題？</span></span>
         </button>
 
-        {loading && <p className="py-12 text-center text-[15px] text-stone-500">載入討論中…</p>}
+        {loading && <p className="py-12 text-center text-[15px] text-tp-gray-600">載入討論中…</p>}
         {!loading && visible.length === 0 && (
-          <p className="py-12 text-center text-[15px] text-stone-500">
+          <p className="py-12 text-center text-[15px] text-tp-gray-600">
             {query
               ? "找不到符合的討論"
               : filter === "uncategorized"
@@ -114,13 +114,13 @@ export function ForumFeed({
             type="button"
             key={question.id}
             onClick={() => onOpen(question.id)}
-            className="block w-full px-4 py-3 text-left transition-colors hover:bg-claude-sand/35 active:bg-claude-sand/55"
+            className="block w-full px-4 py-3 text-left transition-colors hover:bg-tp-gray-100/35 active:bg-tp-gray-100/55"
           >
             <span className="flex gap-2.5">
               <Avatar name={question.author.nickname} size={40} />
               <span className="flex flex-col">
-                <span className="block line-clamp-3 text-[15px] leading-relaxed whitespace-pre-wrap text-stone-800">{question.body ?? "內容待確認"}</span>
-                <span className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-stone-500">
+                <span className="block line-clamp-3 text-[15px] leading-relaxed whitespace-pre-wrap text-tp-gray-900">{question.body ?? "內容待確認"}</span>
+                <span className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-tp-gray-600">
                   <span className="flex items-center gap-1" aria-label={`${question.answer_count} 則留言`}><MessageCircle className="size-4" />{question.answer_count}</span>
                   {question.location_sharing !== "off" && <span aria-label="已開啟附近通知" title="已開啟附近通知"><MapPin className="size-4" /></span>}
                   <time dateTime={question.created_at} className="whitespace-nowrap">{timeAgo(question.created_at, now)}</time>
@@ -128,13 +128,13 @@ export function ForumFeed({
                     className={cn(
                       "rounded-md px-1.5 py-1 font-semibold",
                       question.category === "uncategorized"
-                        ? "bg-amber-100 text-amber-800"
-                        : "bg-claude-sand text-stone-700",
+                        ? "bg-tp-secondary-100 text-tp-secondary-800"
+                        : "bg-tp-gray-100 text-tp-gray-800",
                     )}
                   >
                     {categoryLabel(question.category)}
                   </span>
-                  {(question.tags ?? []).slice(0, 2).map((tag) => <span key={tag} className="rounded-md bg-claude/10 px-1.5 py-1 font-semibold text-claude-dark">#{tag.replace(/^#/, "")}</span>)}
+                  {(question.tags ?? []).slice(0, 2).map((tag) => <span key={tag} className="rounded-md bg-tp-primary-500/10 px-1.5 py-1 font-semibold text-tp-primary-700">#{tag.replace(/^#/, "")}</span>)}
                 </span>
               </span>
             </span>

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 export default function ChatPage() {
   return (
-    <main className="flex flex-1 items-center justify-center bg-claude-sand font-sans sm:p-4">
+    <main className="flex flex-1 items-center justify-center bg-tp-gray-200 font-sans sm:p-4">
       <LineApp />
     </main>
   );

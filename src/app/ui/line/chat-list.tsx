@@ -100,22 +100,22 @@ export function ChatList({
   const sheetRow = rows.find((r) => r.q.id === sheetId);
 
   return (
-    <div className="relative flex h-full flex-col bg-claude-ivory">
+    <div className="relative flex h-full flex-col bg-tp-gray-50">
       <div className="px-4 pt-4 pb-3">
-        <label className="flex h-11 items-center gap-2 rounded-xl bg-claude-sand/70 px-3.5 text-stone-500">
+        <label className="flex h-11 items-center gap-2 rounded-xl bg-tp-gray-100/70 px-3.5 text-tp-gray-600">
           <Search className="size-5 shrink-0" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜尋我的問題"
-            className="min-w-0 flex-1 bg-transparent text-[15px] text-stone-900 outline-none placeholder:text-stone-500"
+            className="min-w-0 flex-1 bg-transparent text-[15px] text-tp-gray-950 outline-none placeholder:text-tp-gray-600"
           />
           {query && (
             <button
               type="button"
               aria-label="清除搜尋"
               onClick={() => setQuery("")}
-              className="flex size-8 items-center justify-center rounded-full bg-stone-400 text-white"
+              className="flex size-8 items-center justify-center rounded-full bg-tp-gray-400 text-white"
             >
               <X className="size-4" />
             </button>
@@ -125,20 +125,20 @@ export function ChatList({
 
       <ul className="flex-1 overflow-y-auto pb-24">
         {loading && (
-          <li className="px-4 py-16 text-center text-[15px] text-stone-500">
+          <li className="px-4 py-16 text-center text-[15px] text-tp-gray-600">
             載入中…
           </li>
         )}
         {!loading && rows.length === 0 && (
           <li className="flex flex-col items-center gap-4 px-6 py-16 text-center">
-            <p className="text-[15px] text-stone-500">
+            <p className="text-[15px] text-tp-gray-600">
               {query ? "找不到符合的問題" : "還沒有問過問題"}
             </p>
             {!query && (
               <button
                 type="button"
                 onClick={actions.onAsk}
-                className="rounded-2xl bg-claude px-8 py-4 text-[17px] font-bold text-white"
+                className="rounded-2xl bg-tp-primary-700 px-8 py-4 text-[17px] font-bold text-white"
               >
                 我要發問
               </button>
@@ -161,7 +161,7 @@ export function ChatList({
       <button
         type="button"
         onClick={actions.onAsk}
-        className="absolute right-4 bottom-4 z-20 flex h-14 items-center gap-2 rounded-full bg-claude pr-6 pl-5 text-[18px] font-bold text-white shadow-lg ring-1 ring-black/5 active:bg-claude-dark"
+        className="absolute right-4 bottom-4 z-20 flex h-14 items-center gap-2 rounded-full bg-tp-primary-700 pr-6 pl-5 text-[18px] font-bold text-white shadow-lg ring-1 ring-black/5 active:bg-tp-primary-800"
       >
         <Plus className="size-6" strokeWidth={2.8} />
         我要發問
@@ -181,14 +181,14 @@ export function ChatList({
 function StatusChip({ q }: { q: QuestionSummary }) {
   if (q.status === "resolved") {
     return (
-      <span className="shrink-0 rounded-md bg-claude-green/15 px-1.5 text-[12px] leading-5 font-medium text-claude-green">
+      <span className="shrink-0 rounded-md bg-tp-gray-500/15 px-1.5 text-[12px] leading-5 font-medium text-tp-gray-700">
         已解決
       </span>
     );
   }
   if (q.status === "in_progress") {
     return (
-      <span className="shrink-0 rounded-md bg-claude-blue/15 px-1.5 text-[12px] leading-5 font-medium text-claude-blue">
+      <span className="shrink-0 rounded-md bg-tp-secondary-500/15 px-1.5 text-[12px] leading-5 font-medium text-tp-secondary-800">
         協助中
       </span>
     );
@@ -218,43 +218,43 @@ function QuestionRow({
         type="button"
         onClick={onOpen}
         {...press}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors select-none [-webkit-touch-callout:none] hover:bg-claude-sand/40 active:bg-claude-sand/60"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors select-none [-webkit-touch-callout:none] hover:bg-tp-gray-100/40 active:bg-tp-gray-100/60"
       >
         <QuestionAvatar q={q} size={40} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
-            <span className="truncate text-[15px] font-semibold text-stone-900">
+            <span className="truncate text-[15px] font-semibold text-tp-gray-950">
               {row.body}
             </span>
             {row.members > 1 && (
-              <span className="shrink-0 text-[15px] text-stone-500">
+              <span className="shrink-0 text-[15px] text-tp-gray-600">
                 ({row.members})
               </span>
             )}
             {prefs.muted && (
-              <BellOff className="size-4 shrink-0 text-stone-500" aria-label="已關閉提醒" />
+              <BellOff className="size-4 shrink-0 text-tp-gray-600" aria-label="已關閉提醒" />
             )}
           </div>
           <div className="mt-0.5 flex items-center gap-1.5">
             <StatusChip q={q} />
-            <p className="truncate text-[15px] text-stone-500">
+            <p className="truncate text-[15px] text-tp-gray-600">
               {preview.replace(/\n/g, " ")}
             </p>
           </div>
         </div>
         <div className="flex min-h-12 shrink-0 flex-col items-end justify-between self-stretch py-0.5 max-[300px]:min-h-0">
-          <span className="text-[12px] text-stone-500 max-[300px]:hidden">
+          <span className="text-[12px] text-tp-gray-600 max-[300px]:hidden">
             {formatListTime(Date.parse(row.lastAt), now)}
           </span>
           <div className="flex items-center gap-1">
             {prefs.pinned && (
-              <Pin className="size-4 rotate-45 text-stone-500" aria-label="已釘選" />
+              <Pin className="size-4 rotate-45 text-tp-gray-600" aria-label="已釘選" />
             )}
             {unread > 0 && (
               <span
                 className={cn(
                   "min-w-6 rounded-full px-1.5 text-center text-[12px] leading-6 font-bold text-white",
-                  prefs.muted ? "bg-stone-400" : "bg-claude-dark",
+                  prefs.muted ? "bg-tp-gray-400" : "bg-tp-primary-700",
                 )}
                 aria-label={`${unread} 則新回答`}
               >
@@ -293,10 +293,10 @@ function RowActionSheet({
   ];
   return (
     <Sheet onClose={onClose}>
-      <p className="truncate px-4 pt-4 pb-2 text-center text-[15px] font-semibold text-stone-500">
+      <p className="truncate px-4 pt-4 pb-2 text-center text-[15px] font-semibold text-tp-gray-600">
         {row.body}
       </p>
-      <ul className="divide-y divide-claude-sand/70">
+      <ul className="divide-y divide-tp-gray-100/70">
         {items.map((item) => (
           <li key={item.label}>
             <button
@@ -305,18 +305,18 @@ function RowActionSheet({
                 item.run();
                 onClose();
               }}
-              className="w-full px-4 py-4 text-[15px] text-stone-900 hover:bg-claude-sand/40"
+              className="w-full px-4 py-4 text-[15px] text-tp-gray-950 hover:bg-tp-gray-100/40"
             >
               {item.label}
             </button>
           </li>
         ))}
       </ul>
-      <div className="h-2 bg-claude-sand/60" />
+      <div className="h-2 bg-tp-gray-100/60" />
       <button
         type="button"
         onClick={onClose}
-        className="w-full px-4 py-4 text-[15px] text-stone-600 hover:bg-claude-sand/40"
+        className="w-full px-4 py-4 text-[15px] text-tp-gray-700 hover:bg-tp-gray-100/40"
       >
         取消
       </button>
@@ -340,17 +340,17 @@ export function AskSheet({
     <Sheet onClose={onClose}>
       <div className="px-5 pt-6 pb-4">
         <h2 className="text-center text-[20px] font-bold">我要發問</h2>
-        <p className="mt-1.5 text-center text-[15px] leading-relaxed text-stone-600">
+        <p className="mt-1.5 text-center text-[15px] leading-relaxed text-tp-gray-700">
           按下「發問」後，
           <br />
           可以打字、拍照或錄音說明您的問題
         </p>
-        <label className="mt-5 flex items-center justify-center gap-2 text-[15px] text-stone-600">
+        <label className="mt-5 flex items-center justify-center gap-2 text-[15px] text-tp-gray-700">
           分類
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value as CategoryId)}
-            className="h-10 rounded-lg border border-claude-sand bg-white px-2 text-[15px] text-stone-800 outline-none focus:border-claude"
+            className="h-10 rounded-lg border border-tp-gray-100 bg-white px-2 text-[15px] text-tp-gray-900 outline-none focus:border-tp-primary-500"
           >
             {META.categories.map((c) => (
               <option key={c.id} value={c.id}>
@@ -362,14 +362,14 @@ export function AskSheet({
         <button
           type="button"
           onClick={() => onAsk(category)}
-          className="mt-4 w-full rounded-2xl bg-claude py-4 text-[20px] font-bold text-white shadow-sm active:bg-claude-dark"
+          className="mt-4 w-full rounded-2xl bg-tp-primary-700 py-4 text-[20px] font-bold text-white shadow-sm active:bg-tp-primary-800"
         >
           發問
         </button>
         <button
           type="button"
           onClick={onClose}
-          className="mt-2 w-full py-3 text-[15px] text-stone-600"
+          className="mt-2 w-full py-3 text-[15px] text-tp-gray-700"
         >
           取消
         </button>
@@ -395,7 +395,7 @@ export function Sheet({
         onClick={onClose}
         className="absolute inset-0 cursor-default bg-black/40 animate-in fade-in"
       />
-      <div className="relative max-h-[90%] overflow-y-auto rounded-t-2xl bg-claude-ivory pb-[env(safe-area-inset-bottom)] animate-in slide-in-from-bottom duration-200">
+      <div className="relative max-h-[90%] overflow-y-auto rounded-t-2xl bg-tp-gray-50 pb-[env(safe-area-inset-bottom)] animate-in slide-in-from-bottom duration-200">
         {children}
       </div>
     </div>
@@ -424,7 +424,7 @@ export function IconButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "inline-flex size-12 shrink-0 items-center justify-center rounded-full text-stone-800 transition-colors hover:bg-black/5 active:bg-black/10 disabled:opacity-40",
+        "inline-flex size-12 shrink-0 items-center justify-center rounded-full text-tp-gray-900 transition-colors hover:bg-black/5 active:bg-black/10 disabled:opacity-40",
         className,
       )}
     >
