@@ -155,7 +155,7 @@ export type Meta = {
 
 /** Socket.IO 只送「有更新」的訊號，前端收到後再用 REST 重抓 */
 export type Signal =
-  /** 需要整個重抓（也用在斷線重連之後） */
+  /** 討論串有更新；前端提示手動重新整理（也用在斷線重連之後） */
   | { type: "feed.changed" }
   | { type: "question.changed"; question_id: string }
   | { type: "answers.changed"; question_id: string };

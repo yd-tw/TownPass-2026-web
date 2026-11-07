@@ -308,6 +308,7 @@ function LineAppConnected({
   const [forumBaseQuestions, setForumBaseQuestions] = useState<QuestionDetail[]>([]);
   const [forumSearch, setForumSearch] = useState("");
   const [forumLoading, setForumLoading] = useState(false);
+  const [forumHasUpdates, setForumHasUpdates] = useState(false);
   const [forumLoadingMore, setForumLoadingMore] = useState(false);
   const [forumCursor, setForumCursor] = useState<string | null>(null);
   const forumSearchRef = useRef("");
@@ -402,6 +403,8 @@ function LineAppConnected({
     async (id: string) => {
       const detail = await api.getQuestion(id);
       setDetails((prev) => ({ ...prev, [id]: detail }));
+      setForumQuestions((prev) => prev.map((question) => question.id === id ? detail : question));
+      setForumBaseQuestions((prev) => prev.map((question) => question.id === id ? detail : question));
       return detail;
     },
     [api],
@@ -422,6 +425,7 @@ function LineAppConnected({
         setForumQuestions(page.questions);
         if (!query) setForumBaseQuestions(page.questions);
         setForumCursor(page.nextCursor);
+        setForumHasUpdates(false);
       }
       return page.questions;
     } finally {
@@ -431,6 +435,7 @@ function LineAppConnected({
 
   function changeForumSearch(value: string) {
     setForumSearch(value);
+    setForumHasUpdates(false);
     forumSearchRef.current = value.trim().replace(/^#/, "").slice(0, 50);
     ++forumRequestRef.current;
     setForumQuestions([]);
@@ -551,23 +556,24 @@ function LineAppConnected({
     api.watch([...questions.map((q) => q.id), ...(activeId ? [activeId] : [])]);
   }, [api, questions, activeId]);
 
-  // ---- 即時訊號：收到後用 REST 重抓（同 api-spec.md 的做法） ----
+  // ---- 即時訊號：更新當前問題；討論串排序留待使用者手動重新整理 ----
   useEffect(
     () =>
       api.subscribe(async (signal) => {
         try {
           if (signal.type === "feed.changed") {
-            await Promise.all([loadAll(), loadForumQuestions()]);
+            setForumHasUpdates(true);
+            await loadAll();
             return;
           }
           const id = signal.question_id;
           if (signal.type === "question.changed") {
-            await Promise.all([loadQuestion(id), loadSummaries(), loadForumQuestions()]);
+            await Promise.all([loadQuestion(id), loadSummaries()]);
             return;
           }
           // 重抓前先記下已經有的回答，重抓後多出來的就是新回答
           const known = latest.current.answers[id];
-          const [list] = await Promise.all([loadAnswers(id), loadSummaries(), loadForumQuestions()]);
+          const [list] = await Promise.all([loadAnswers(id), loadSummaries(), loadQuestion(id)]);
           const { me: currentMe, activeId } = latest.current;
           // 正在看這題就不用再提醒；還沒載入過的問題也不提醒，避免一次跳出舊回答
           if (activeId === id || !known) return;
@@ -772,6 +778,14 @@ function LineAppConnected({
             search={forumSearch}
             onSearchChange={changeForumSearch}
             onLoadMore={loadMoreForumQuestions}
+            onRefresh={async () => {
+              try {
+                await loadForumQuestions();
+              } catch (error) {
+                notify(errorMessage(error), "error");
+              }
+            }}
+            hasUpdates={forumHasUpdates}
             hasMore={forumCursor !== null}
             loadingMore={forumLoadingMore}
             nickname={me?.nickname ?? "訪客"}

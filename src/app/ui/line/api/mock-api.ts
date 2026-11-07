@@ -524,10 +524,22 @@ export function createMockApi(
 
     async listForumQuestions(filter) {
       await wait();
+      const now = Date.now();
+      const attentionGroup = (question: QuestionDetail) => {
+        if (question.status === "resolved") return 7;
+        if (now - Date.parse(question.created_at) > 7 * DAY) return 6;
+        const replies = answers.filter((answer) => answer.question_id === question.id);
+        const people = new Set(replies.filter((answer) => answer.author.role !== "bot" && answer.author.id !== question.author.id).map((answer) => answer.author.id));
+        const liked = replies.some((answer) => answer.votes.upvotes > 0);
+        if (people.size === 0 && replies.length === 0) return now - Date.parse(question.created_at) >= 2 * HOUR ? 0 : 2;
+        if (people.size <= 3) return liked ? 3 : 1;
+        const latestReply = Math.max(...replies.map((answer) => Date.parse(answer.created_at)));
+        return now - latestReply <= 2 * HOUR ? 4 : 5;
+      };
       const list = questions
         .filter((q) => !filter?.category || q.category === filter.category)
         .filter((q) => !filter?.tagQuery || q.tags.some((tag) => tag.toLowerCase().includes(filter.tagQuery!.toLowerCase())))
-        .sort((a, b) => b.created_at.localeCompare(a.created_at));
+        .sort((a, b) => filter?.tagQuery ? b.created_at.localeCompare(a.created_at) : attentionGroup(a) - attentionGroup(b) || b.created_at.localeCompare(a.created_at));
       const start = filter?.cursor ? Math.max(0, list.findIndex((q) => q.id === filter.cursor) + 1) : 0;
       return clone({
         questions: list.slice(start, start + 20),

@@ -165,7 +165,7 @@ export function createHttpApi(
       // 論壇分頁要知道有新問題（feed.changed）
       socket?.emit("feed:subscribe");
       for (const id of watched) socket?.emit("question:subscribe", { question_id: id });
-      // 重新連線後，離線期間的訊號不會補發：整個重抓一次
+      // 重新連線後，離線期間的訊號不會補發：提示使用者重新整理討論串
       if (hasConnected) emitSignal({ type: "feed.changed" });
       hasConnected = true;
     });
@@ -207,7 +207,7 @@ export function createHttpApi(
       const query = new URLSearchParams({ scope: "global", limit: String(FORUM_LIMIT) });
       if (filter?.category) query.set("category", filter.category);
       if (filter?.tagQuery) query.set("tag_q", filter.tagQuery);
-      else query.set("sort", "latest");
+      else query.set("sort", "attention");
       if (filter?.cursor) query.set("cursor", filter.cursor);
       const env = await request<QuestionSummary[]>(
         "GET",
