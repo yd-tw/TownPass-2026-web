@@ -1,24 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { callApp, isInTownPass, onAppMessage, type BridgeMessage } from "@/lib/townpass-bridge";
-
-type UserInfo = {
-  id: string;
-  account: string;
-  username: string;
-  realName: string;
-  idNo: string;
-  email: string;
-  phoneNo: string;
-  birthday: string;
-  memberType: string;
-  verifyLevel: string;
-  residentAddress: string;
-  citizen: boolean;
-  nativePeople: boolean;
-  cityInternetUid: string;
-};
+import { callApp, isInTownPass, onAppMessage, type BridgeMessage, type UserInfo } from "@/lib/townpass-bridge";
 
 type Location = { latitude: number; longitude: number; accuracy: number; timestamp: number };
 
@@ -153,7 +136,7 @@ export default function TownPassInfo() {
             {USER_FIELDS.map(([key, label]) => (
               <div key={key} className="contents">
                 <dt className="text-zinc-500 dark:text-zinc-400">{label}</dt>
-                <dd className="break-all">{show(user[key])}</dd>
+                <dd data-sensitive className="break-all">{show(user[key])}</dd>
               </div>
             ))}
           </dl>
@@ -168,9 +151,9 @@ export default function TownPassInfo() {
         ) : (
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
             <dt className="text-zinc-500 dark:text-zinc-400">緯度</dt>
-            <dd>{location.latitude}</dd>
+            <dd data-sensitive>{location.latitude}</dd>
             <dt className="text-zinc-500 dark:text-zinc-400">經度</dt>
-            <dd>{location.longitude}</dd>
+            <dd data-sensitive>{location.longitude}</dd>
             <dt className="text-zinc-500 dark:text-zinc-400">精度</dt>
             <dd>{Math.round(location.accuracy)} 公尺</dd>
             <dt className="text-zinc-500 dark:text-zinc-400">時間</dt>
@@ -190,7 +173,7 @@ export default function TownPassInfo() {
                   <span className="font-mono font-semibold">{m.name}</span>
                   <span>{new Date(m.at).toLocaleTimeString("zh-TW")}</span>
                 </div>
-                <pre className="overflow-auto whitespace-pre-wrap break-all">{JSON.stringify(m.data, null, 2)}</pre>
+                <pre data-sensitive className="overflow-auto whitespace-pre-wrap break-all">{JSON.stringify(m.data, null, 2)}</pre>
               </li>
             ))}
           </ul>
