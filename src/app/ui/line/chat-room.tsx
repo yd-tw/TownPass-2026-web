@@ -7,9 +7,9 @@ import {
   Copy,
   Image as ImageIcon,
   LoaderCircle,
+  MapPin,
   Menu,
   Mic,
-  MoreHorizontal,
   Plus,
   SendHorizontal,
   Tag,
@@ -158,8 +158,9 @@ export function ChatRoom(props: ChatRoomProps) {
     if (preview) URL.revokeObjectURL(preview);
   }, [preview]);
   const [showJump, setShowJump] = useState(false);
-  const [draftOptionsOpen, setDraftOptionsOpen] = useState(false);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  /** 新問題附上概略位置（顯示成待傳附件） */
+  const sharingLocation = !question && props.locationSharing !== "off";
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const isAuthor = !question || question.author.id === meId;
 
@@ -541,8 +542,26 @@ export function ChatRoom(props: ChatRoomProps) {
         />
       ) : (
         <div className="relative shrink-0 border-t border-tp-gray-100 bg-tp-gray-50 px-1.5 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-          {pendingMedia.length > 0 && (
+          {(pendingMedia.length > 0 || sharingLocation) && (
             <div className="flex max-h-28 gap-2 overflow-x-auto px-2 pb-2" aria-label="待傳附件">
+              {/* 新問題的位置：和圖片一樣是一個附件，移除後可以從「＋」加回來 */}
+              {sharingLocation && (
+                <div className="flex shrink-0 items-center gap-1.5 rounded-xl bg-tp-gray-100 px-2 py-1.5 text-[13px] text-tp-gray-900" title="提供概略位置，讓附近的人看到問題">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-tp-primary-50 text-tp-primary-500">
+                    <MapPin className="size-5" />
+                  </span>
+                  <span className="whitespace-nowrap">概略位置</span>
+                  <button
+                    type="button"
+                    aria-label="移除位置"
+                    disabled={sending}
+                    onClick={() => props.onLocationSharingChange("off")}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full hover:bg-tp-gray-200 disabled:opacity-50"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+              )}
               {pendingMedia.map((item) => (
                 <div key={item.id} className="flex max-w-40 shrink-0 items-center gap-1.5 rounded-xl bg-tp-gray-100 px-2 py-1.5 text-[13px] text-tp-gray-900">
                   {item.kind === "image" ? (
@@ -575,15 +594,6 @@ export function ChatRoom(props: ChatRoomProps) {
               ))}
             </div>
           )}
-          {/* 發問選項：浮在「…」上方，從下面滑出來 */}
-          {!question && draftOptionsOpen && (
-            <div className="absolute bottom-full left-2 z-10 mb-2 w-[min(20rem,calc(100%-1rem))] rounded-2xl bg-white p-3 shadow-xl ring-1 ring-tp-gray-100 animate-in fade-in slide-in-from-bottom-4 duration-200">
-              <label className="flex items-center justify-between gap-3 text-[15px] text-tp-gray-900">
-                <span><strong className="block">通知附近使用者</strong><span className="block text-[12px] text-tp-gray-600">提供概略位置，讓附近的人看到問題</span></span>
-                <input type="checkbox" checked={props.locationSharing !== "off"} onChange={(event) => props.onLocationSharingChange(event.target.checked ? "approximate" : "off")} className="size-5 accent-tp-primary-500" />
-              </label>
-            </div>
-          )}
           {attachmentMenuOpen && (
             <div className="absolute bottom-full left-2 z-10 mb-2 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-tp-gray-100">
               {([
@@ -596,12 +606,17 @@ export function ChatRoom(props: ChatRoomProps) {
                   <Icon className="size-5 shrink-0" />{label}
                 </button>
               ))}
+              {/* 新問題還沒附上位置時才顯示 */}
+              {!question && !sharingLocation && (
+                <button type="button" onClick={() => { setAttachmentMenuOpen(false); props.onLocationSharingChange("approximate"); }} className="flex min-h-11 items-center gap-2 px-4 text-left text-[15px] text-tp-gray-900 hover:bg-tp-gray-100/50">
+                  <MapPin className="size-5 shrink-0" />附上概略位置
+                </button>
+              )}
             </div>
           )}
           <div className="flex min-w-0 items-end gap-0.5">
-          {!question && <IconButton label="發問額外選項" onClick={() => { setAttachmentMenuOpen(false); setDraftOptionsOpen((open) => !open); }} className={INPUT_BUTTON}><MoreHorizontal className="size-5" /></IconButton>}
           {question && <IconButton label="問題選單" onClick={() => { setAttachmentMenuOpen(false); setFocusTagInput(false); setDrawerOpen(true); }} className={INPUT_BUTTON}><Menu className="size-5" /></IconButton>}
-          <IconButton label="新增附件" disabled={sending || checkingVideo} onClick={() => { setDraftOptionsOpen(false); setAttachmentMenuOpen((open) => !open); }} className={INPUT_BUTTON}><Plus className="size-6" /></IconButton>
+          <IconButton label="新增附件" disabled={sending || checkingVideo} onClick={() => setAttachmentMenuOpen((open) => !open)} className={INPUT_BUTTON}><Plus className="size-6" /></IconButton>
           <div className="mx-1 flex min-h-11 min-w-0 flex-1 items-end rounded-[22px] bg-tp-gray-100/70 px-4 max-[300px]:px-2">
             <textarea
               rows={1}
