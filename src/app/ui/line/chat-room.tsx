@@ -133,6 +133,15 @@ export function ChatRoom(props: ChatRoomProps) {
 
   const [text, setText] = useState("");
   const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>(() => props.initialMedia ?? []);
+  // 預先放好的附件晚到（App 問題回報的截圖比聊天室晚讀到）：加到待傳附件最前面
+  const [seenInitialMedia, setSeenInitialMedia] = useState(props.initialMedia);
+  if (props.initialMedia !== seenInitialMedia) {
+    setSeenInitialMedia(props.initialMedia);
+    const added = props.initialMedia;
+    if (added?.length) {
+      setPendingMedia((current) => [...added, ...current.filter((item) => !added.some((a) => a.id === item.id))]);
+    }
+  }
   const [checkingVideo, setCheckingVideo] = useState(false);
   const [recording, setRecording] = useState(false);
   const [menu, setMenu] = useState<{ post: Post; top: number } | null>(null);

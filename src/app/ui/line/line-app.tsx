@@ -11,6 +11,7 @@ import {
 import { createMockApi, META } from "./api/mock-api";
 import { getCurrentLocation } from "./api/location";
 import { connectBackend, getIdentity } from "./api/session";
+import { createDeferredApi, type DeferredApi } from "./api/deferred-api";
 import { ForumFeed } from "@/app/ui/forum/forum-feed";
 import {
   ApiError,
@@ -51,6 +52,9 @@ export default function LineApp({ ask = false }: { ask?: boolean }) {
     <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-tp-gray-50 sm:h-[min(860px,calc(100dvh-2rem))] sm:w-[400px] sm:rounded-[2.25rem] sm:shadow-2xl sm:ring-1 sm:ring-black/10">
       {mounted ? (
         <LineAppInner ask={ask} />
+      ) : ask ? (
+        // 我要發問：掛載前先鋪聊天室的底色，不顯示轉圈
+        <div className="flex-1 bg-tp-gray-100" />
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
           <Connecting />
@@ -168,69 +172,99 @@ function readReportFromUrl(): Promise<Report | null> {
 type Connection =
   | { status: "connecting" }
   | { status: "error"; message: string }
-  | { status: "ready"; api: AskerApi; note: string | null; report: Report | null };
+  | { status: "ready"; api: AskerApi; note: string | null };
 
 /**
- * 先連上後端再顯示畫面。
+ * 連上後端。
  * - 網址加上 ?demo=mock 用示範資料；?demo=crowd 模擬發問後有 50～100 位志工回答
  * - 在城市通 App 內用 userinfo.id 登入；一般瀏覽器用這台瀏覽器的測試帳號
  */
+async function connect(): Promise<{ api: AskerApi; note: string | null }> {
+  const demo = new URLSearchParams(window.location.search).get("demo");
+  if (demo === "mock" || demo === "crowd") {
+    return {
+      api: createMockApi(readNickname(), { crowd: demo === "crowd" }),
+      note: "示範模式：資料只存在這個分頁，重新整理就會重置",
+    };
+  }
+  const identity = await getIdentity();
+  return {
+    api: await connectBackend(identity, readNickname()),
+    note: identity.isWebTest ? "瀏覽器測試帳號：目前不是在城市通 App 裡開啟" : null,
+  };
+}
+
+/**
+ * 一般情況先連上後端再顯示畫面。
+ * 「我要發問」（/new、?mode=ask）不等連線：先用 deferred API 顯示新問題聊天室，
+ * 連線在背景進行，使用者按送出時才會等。
+ */
 function LineAppInner({ ask }: { ask: boolean }) {
+  const [instant] = useState(
+    () => ask || new URLSearchParams(window.location.search).get("mode") === "ask",
+  );
   const [attempt, setAttempt] = useState(0);
   const [conn, setConn] = useState<Connection>({ status: "connecting" });
-  // 問題回報草稿和連線後端同時進行，聊天室出現時截圖已經備好，不用再重新掛載一次。
-  // 草稿只能讀一次：存在 ref，Strict Mode 重跑 effect 或「重新連線」都沿用同一份。
+  const [deferred, setDeferred] = useState<DeferredApi | null>(() => (instant ? createDeferredApi() : null));
+  // App 問題回報的草稿：讀到就交給聊天室放進待傳附件（同一個聊天室，不重新掛載）
+  const [report, setReport] = useState<Report | null>(null);
+  // 草稿只能讀一次：存在 ref，Strict Mode 重跑 effect 也沿用同一份
   const reportRef = useRef<Promise<Report | null> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    let created: AskerApi | null = null;
-    const demo = new URLSearchParams(window.location.search).get("demo");
     reportRef.current ??= readReportFromUrl();
-    const report = reportRef.current;
-    Promise.resolve()
-      .then(async () => {
-        if (demo === "mock" || demo === "crowd") {
-          return {
-            api: createMockApi(readNickname(), { crowd: demo === "crowd" }),
-            note: "示範模式：資料只存在這個分頁，重新整理就會重置",
-          };
-        }
-        const identity = await getIdentity();
-        return {
-          api: await connectBackend(identity, readNickname()),
-          note: identity.isWebTest ? "瀏覽器測試帳號：目前不是在城市通 App 裡開啟" : null,
-        };
-      })
-      .then(async ({ api, note }) => {
+    reportRef.current.then((draft) => {
+      if (!cancelled && draft) setReport(draft);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let created: AskerApi | null = null;
+    connect()
+      .then(({ api, note }) => {
         created = api;
         if (cancelled) {
           api.close();
           return;
         }
-        const draft = await report;
-        if (!cancelled) setConn({ status: "ready", api, note, report: draft });
+        deferred?.resolve(api);
+        setConn({ status: "ready", api, note });
       })
       .catch((e: unknown) => {
-        if (!cancelled) {
-          setConn({
-            status: "error",
-            message: e instanceof ApiError || e instanceof Error ? e.message : "連線失敗",
-          });
-        }
+        if (cancelled) return;
+        deferred?.reject(e);
+        setConn({
+          status: "error",
+          message: e instanceof ApiError || e instanceof Error ? e.message : "連線失敗",
+        });
       });
     return () => {
       cancelled = true;
       created?.close();
     };
-  }, [attempt]);
+  }, [attempt, deferred]);
 
-  if (conn.status === "ready") {
-    return <LineAppConnected key={attempt} api={conn.api} note={conn.note} ask={ask} report={conn.report} />;
+  // 我要發問：連線前就顯示；api 一直用 deferred 那份，連上後不會換 api 而重抓資料
+  const api = conn.status === "error" ? null : (deferred?.api ?? (conn.status === "ready" ? conn.api : null));
+  if (api) {
+    return (
+      <LineAppConnected
+        key={attempt}
+        api={api}
+        note={conn.status === "ready" ? conn.note : null}
+        ask={ask}
+        report={report}
+      />
+    );
   }
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
-      {conn.status === "connecting" ? (
+      {conn.status !== "error" ? (
         <Connecting />
       ) : (
         <>
@@ -243,6 +277,7 @@ function LineAppInner({ ask }: { ask: boolean }) {
             type="button"
             onClick={() => {
               setConn({ status: "connecting" });
+              if (instant) setDeferred(createDeferredApi());
               setAttempt((n) => n + 1);
             }}
             className="mt-2 w-full max-w-xs rounded-2xl bg-tp-primary-500 py-4 text-[20px] font-bold text-white active:bg-tp-primary-600"
@@ -293,6 +328,25 @@ function LineAppConnected({
       ? { key: makeId(), id: null, locationSharing: "approximate", instant: true }
       : null;
   });
+  // 問題回報草稿比聊天室晚到：放進目前的新問題（保留 key，聊天室不重新掛載）
+  const [appliedReport, setAppliedReport] = useState(report);
+  if (report !== appliedReport) {
+    setAppliedReport(report);
+    if (report) {
+      setActive((a) =>
+        a?.id
+          ? a
+          : {
+              key: a?.key ?? makeId(),
+              id: null,
+              category: "app_usage",
+              locationSharing: a?.locationSharing ?? "approximate",
+              report,
+              instant: a?.instant,
+            },
+      );
+    }
+  }
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState<{
