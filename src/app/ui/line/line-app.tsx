@@ -322,7 +322,6 @@ function LineAppConnected({
   const [now, setNow] = useState(() => Date.now());
   const router = useRouter();
   const pathname = usePathname();
-  const router = useRouter();
   const tab: Tab = pathname === "/forum" ? "forum" : "chats";
   const isRoomPage = pathname === "/room";
   const roomId = isRoomPage && typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("question") : null;
