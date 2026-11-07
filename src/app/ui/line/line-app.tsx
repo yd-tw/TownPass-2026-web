@@ -552,10 +552,10 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
     }
   }
 
-  async function toggleLike(answer: Answer) {
+  async function toggleVote(answer: Answer, value: 1 | -1) {
     try {
-      if (answer.votes.my_vote === 1) await api.unvote(answer.id);
-      else await api.vote(answer.id, 1);
+      if (answer.votes.my_vote === value) await api.unvote(answer.id);
+      else await api.vote(answer.id, value);
       await loadAnswers(answer.question_id);
     } catch (e) {
       notify(errorMessage(e), "error");
@@ -666,7 +666,7 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           onLocationSharingChange={(value) => setActive((current) => current ? { ...current, locationSharing: value } : current)}
           onResolve={() => active.id ? resolve(active.id) : Promise.resolve()}
           onClassify={(category) => (active.id ? classify(active.id, category) : Promise.resolve())}
-          onToggleLike={toggleLike}
+          onToggleVote={toggleVote}
           onDeleteAnswer={deleteAnswer}
           onWithdraw={() => (active.id ? withdraw(active.id) : Promise.resolve())}
           notify={notify}

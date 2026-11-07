@@ -682,6 +682,9 @@ export function createMockApi(
     async vote(answerId, value) {
       await wait(150);
       const a = findAnswer(answerId);
+      if (value === -1 && a.author.id === me.id) {
+        throw new ApiError(403, "FORBIDDEN", "不能對自己的回答倒讚");
+      }
       const v = votes.get(answerId) ?? { up: 0, mine: null };
       if (v.mine === 1) v.up--;
       v.mine = value;

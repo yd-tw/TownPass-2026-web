@@ -13,6 +13,7 @@ import {
   Plus,
   SendHorizontal,
   Tag,
+  ThumbsDown,
   ThumbsUp,
   Trash2,
   Video,
@@ -84,7 +85,7 @@ export type ChatRoomProps = {
   onResolve: () => Promise<void>;
   /** 志工幫未分類的問題選分類（PUT /questions/{id}/category） */
   onClassify: (category: CategoryId) => Promise<void>;
-  onToggleLike: (answer: Answer) => Promise<void>;
+  onToggleVote: (answer: Answer, value: 1 | -1) => Promise<void>;
   onDeleteAnswer: (answer: Answer) => void;
   onWithdraw: () => Promise<void>;
   notify: Notify;
@@ -132,7 +133,7 @@ export function ChatRoom(props: ChatRoomProps) {
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [resolving, setResolving] = useState(false);
   const [classifyOpen, setClassifyOpen] = useState(false);
-  const [likingIds, setLikingIds] = useState<Set<string>>(() => new Set());
+  const [votingIds, setVotingIds] = useState<Set<string>>(() => new Set());
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
@@ -350,12 +351,12 @@ export function ChatRoom(props: ChatRoomProps) {
     finally { setResolving(false); }
   }
 
-  async function toggleLike(answer: Answer) {
-    if (likingIds.has(answer.id)) return;
-    setLikingIds((previous) => new Set(previous).add(answer.id));
-    try { await props.onToggleLike(answer); }
+  async function toggleVote(answer: Answer, value: 1 | -1) {
+    if (votingIds.has(answer.id)) return;
+    setVotingIds((previous) => new Set(previous).add(answer.id));
+    try { await props.onToggleVote(answer, value); }
     finally {
-      setLikingIds((previous) => {
+      setVotingIds((previous) => {
         const next = new Set(previous);
         next.delete(answer.id);
         return next;
@@ -485,8 +486,8 @@ export function ChatRoom(props: ChatRoomProps) {
                 first={item.first}
                 onMenu={openMenu}
                 onOpenImage={setLightbox}
-                onToggleLike={toggleLike}
-                likeBusy={item.post.answer ? likingIds.has(item.post.answer.id) : false}
+                onToggleVote={toggleVote}
+                voteBusy={item.post.answer ? votingIds.has(item.post.answer.id) : false}
               />
             );
           })}
@@ -722,15 +723,15 @@ function PostRow({
   first,
   onMenu,
   onOpenImage,
-  onToggleLike,
-  likeBusy,
+  onToggleVote,
+  voteBusy,
 }: {
   post: Post;
   first: boolean;
   onMenu: (post: Post, el: HTMLElement) => void;
   onOpenImage: (url: string) => void;
-  onToggleLike: (answer: Answer) => void;
-  likeBusy: boolean;
+  onToggleVote: (answer: Answer, value: 1 | -1) => void;
+  voteBusy: boolean;
 }) {
   const press = useLongPress((el) => onMenu(post, el));
   const answer = post.answer;
@@ -763,21 +764,37 @@ function PostRow({
       )}
     </div>
   );
-  const like = answer && (
-    <button
-      type="button"
-      aria-label={`${answer.votes.my_vote === 1 ? "取消讚" : "讚"}，目前 ${answer.votes.upvotes} 個讚`}
-      aria-pressed={answer.votes.my_vote === 1}
-      disabled={likeBusy}
-      onClick={() => onToggleLike(answer)}
-      className={cn(
-        "flex min-h-8 items-center gap-1.5 justify-self-start rounded-full px-2 text-[13px] transition-colors disabled:opacity-50",
-        answer.votes.my_vote === 1 ? "bg-tp-primary-50 font-semibold text-tp-primary-500" : "text-tp-gray-700 hover:bg-black/5",
-      )}
-    >
-      <ThumbsUp className="size-4" fill={answer.votes.my_vote === 1 ? "currentColor" : "none"} />
-      <span>{answer.votes.upvotes}</span>
-    </button>
+  const reactions = answer && (
+    <div className="flex items-center gap-1 justify-self-start">
+      <button
+        type="button"
+        aria-label={`${answer.votes.my_vote === 1 ? "取消讚" : "讚"}，目前 ${answer.votes.upvotes} 個讚`}
+        aria-pressed={answer.votes.my_vote === 1}
+        disabled={voteBusy}
+        onClick={() => onToggleVote(answer, 1)}
+        className={cn(
+          "flex min-h-8 items-center gap-1.5 rounded-full px-2 text-[13px] transition-colors disabled:opacity-50",
+          answer.votes.my_vote === 1 ? "bg-tp-primary-50 font-semibold text-tp-primary-500" : "text-tp-gray-700 hover:bg-black/5",
+        )}
+      >
+        <ThumbsUp className="size-4" fill={answer.votes.my_vote === 1 ? "currentColor" : "none"} />
+        <span>{answer.votes.upvotes}</span>
+      </button>
+      <button
+        type="button"
+        aria-label={post.self ? "不能對自己的回答倒讚" : answer.votes.my_vote === -1 ? "取消倒讚" : "倒讚"}
+        aria-pressed={answer.votes.my_vote === -1}
+        title={post.self ? "不能對自己的回答倒讚" : undefined}
+        disabled={voteBusy || post.self}
+        onClick={() => onToggleVote(answer, -1)}
+        className={cn(
+          "flex size-8 items-center justify-center rounded-full transition-colors disabled:opacity-40",
+          answer.votes.my_vote === -1 ? "bg-tp-gray-100 text-tp-gray-900" : "text-tp-gray-700 hover:bg-black/5",
+        )}
+      >
+        <ThumbsDown className="size-4" fill={answer.votes.my_vote === -1 ? "currentColor" : "none"} />
+      </button>
+    </div>
   );
   const time = (
     <span className="shrink-0 pb-0.5 text-[12px] leading-tight text-tp-gray-600">
@@ -795,7 +812,7 @@ function PostRow({
           {post.authorRole === "bot" && <span className="col-start-2 row-start-1 justify-self-end text-[12px] font-semibold text-tp-primary-500">機器人</span>}
           <span className={cn("col-start-1", post.authorRole === "bot" ? "row-start-2" : "row-start-1")}>{time}</span>
           <div className={cn("col-start-2 min-w-0", post.authorRole === "bot" ? "row-start-2" : "row-start-1")}>{bubbles}</div>
-          {like && <span className={cn("col-start-2 mt-1", post.authorRole === "bot" ? "row-start-3" : "row-start-2")}>{like}</span>}
+          {reactions && <div className={cn("col-start-2 mt-1", post.authorRole === "bot" ? "row-start-3" : "row-start-2")}>{reactions}</div>}
         </div>
       </div>
     );
@@ -820,7 +837,7 @@ function PostRow({
         <div className="grid w-fit max-w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-x-1.5">
           <div className="col-start-1 row-start-1 min-w-0">{bubbles}</div>
           <span className="col-start-2 row-start-1">{time}</span>
-          {like && <span className="col-start-1 row-start-2 mt-1">{like}</span>}
+          {reactions && <div className="col-start-1 row-start-2 mt-1">{reactions}</div>}
         </div>
       </div>
     </div>
