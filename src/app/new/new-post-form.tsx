@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { CircleCheckBig } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useSearchParams } from "next/navigation";
 import { callApp, isInTownPass, type ReportDraft } from "@/lib/townpass-bridge";
 import {
@@ -14,7 +16,7 @@ import {
 } from "@/lib/forum-api";
 
 const inputClass =
-  "w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 dark:border-white/15 dark:bg-zinc-900";
+  "w-full rounded-2xl border border-tp-gray-100 bg-white px-4 py-3 text-[17px] text-tp-gray-900 outline-none placeholder:text-tp-gray-400 focus:border-tp-primary-500";
 
 export default function NewPostForm() {
   const searchParams = useSearchParams();
@@ -109,82 +111,108 @@ export default function NewPostForm() {
     }
   }
 
+  const header = (
+    <header className="flex h-16 shrink-0 items-center px-4">
+      <h1 className="text-[17px] leading-tight font-bold text-tp-gray-950">發表文章</h1>
+    </header>
+  );
+
   if (loadingDraft) {
-    return <p className="p-4 text-sm text-zinc-500">正在載入回報內容…</p>;
+    return (
+      <>
+        {header}
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
+          <span className="size-10 animate-spin rounded-full border-4 border-tp-primary-500 border-t-transparent" />
+          <p className="text-[17px] text-tp-gray-700">正在載入回報內容…</p>
+        </div>
+      </>
+    );
   }
 
   if (doneId) {
     return (
-      <div className="flex w-full max-w-lg flex-col items-center gap-3 rounded-2xl border border-black/10 bg-white p-6 text-center shadow-sm dark:border-white/15 dark:bg-zinc-900">
-        <p className="font-semibold">已發表 ✓</p>
-        <p className="text-xs text-zinc-500">問題 ID：{doneId}</p>
-        <Link href="/" className="text-sm underline">
-          回首頁
-        </Link>
-      </div>
+      <>
+        {header}
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
+          <CircleCheckBig className="size-14 text-tp-success" />
+          <p className="text-[19px] font-bold text-tp-gray-900">已發表</p>
+          <p className="text-[13px] text-tp-gray-400">問題 ID：{doneId}</p>
+          <Link
+            href="/"
+            className="mt-2 w-full max-w-xs rounded-2xl bg-tp-primary-500 py-4 text-[20px] font-bold text-white active:bg-tp-primary-600"
+          >
+            回首頁
+          </Link>
+        </div>
+      </>
     );
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="flex w-full max-w-lg flex-col gap-4 self-start rounded-2xl border border-black/10 bg-white p-4 shadow-sm dark:border-white/15 dark:bg-zinc-900"
-    >
-      <h1 className="text-lg font-semibold">發表文章</h1>
+    <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+      {header}
 
-      {isAppReport && !draft && (
-        <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-          沒有讀到回報草稿（可能已讀取過、超過 10 分鐘，或不在 App 內開啟），請手動填寫。
-        </p>
-      )}
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 pb-4">
+        {isAppReport && !draft && (
+          <p className="rounded-2xl bg-tp-secondary-50 px-4 py-3 text-[15px] leading-snug text-tp-secondary-800 ring-1 ring-tp-secondary-200">
+            沒有讀到回報草稿（可能已讀取過、超過 10 分鐘，或不在 App 內開啟），請手動填寫。
+          </p>
+        )}
 
-      <input
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="標題（選填，未填時取內容前 30 字）"
-        maxLength={80}
-        className={inputClass}
-      />
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="標題（選填，未填時取內容前 30 字）"
+          maxLength={80}
+          className={inputClass}
+        />
 
-      <textarea
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        rows={6}
-        placeholder="內容"
-        maxLength={5000}
-        required={!image}
-        className={inputClass}
-      />
+        <textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          rows={6}
+          placeholder="內容"
+          maxLength={5000}
+          required={!image}
+          className={cn(inputClass, "resize-none")}
+        />
 
-      {image && (
-        <figure className="flex flex-col items-start gap-2">
-          {/* data URL 不需要 next/image 最佳化 */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={image} alt="問題截圖" className="max-h-96 rounded-lg border border-black/10" />
-          <button type="button" onClick={() => setImage(null)} className="text-xs text-red-600 underline">
-            移除截圖
-          </button>
-        </figure>
-      )}
+        {image && (
+          <figure className="flex flex-col items-start gap-2">
+            {/* data URL 不需要 next/image 最佳化 */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={image} alt="問題截圖" className="max-h-96 rounded-2xl border border-tp-gray-100" />
+            <button
+              type="button"
+              onClick={() => setImage(null)}
+              className="min-h-10 text-[15px] font-medium text-tp-warn-200"
+            >
+              移除截圖
+            </button>
+          </figure>
+        )}
 
-      {draft && (
-        <details className="text-sm">
-          <summary className="cursor-pointer text-zinc-500">裝置資訊（會一併送出）</summary>
-          <pre className="mt-2 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-100 p-2 text-xs dark:bg-zinc-800">
-            {JSON.stringify(draft.context, null, 2)}
-          </pre>
-        </details>
-      )}
+        {draft && (
+          <details className="rounded-2xl border border-tp-gray-100 bg-white px-4 py-3">
+            <summary className="cursor-pointer text-[15px] text-tp-gray-700">裝置資訊（會一併送出）</summary>
+            <pre className="mt-2 overflow-auto rounded-xl bg-tp-gray-50 p-2 text-[12px] whitespace-pre-wrap text-tp-gray-700">
+              {JSON.stringify(draft.context, null, 2)}
+            </pre>
+          </details>
+        )}
 
-      {error && <p className="text-sm text-red-600">發文失敗：{error}</p>}
+        {error && <p className="text-[15px] text-tp-warn-200">發文失敗：{error}</p>}
+      </div>
 
-      <button
-        type="submit"
-        disabled={submitting}
-        className="rounded-full bg-zinc-900 px-4 py-2 text-sm text-white disabled:opacity-50 dark:bg-white dark:text-zinc-900"
-      >
-        {submitting ? "送出中…" : "發表"}
-      </button>
+      <div className="shrink-0 border-t border-tp-gray-100 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full rounded-2xl bg-tp-primary-500 py-4 text-[20px] font-bold text-white active:bg-tp-primary-600 disabled:opacity-50"
+        >
+          {submitting ? "送出中…" : "發表"}
+        </button>
+      </div>
     </form>
   );
 }
