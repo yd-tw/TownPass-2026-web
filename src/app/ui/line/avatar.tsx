@@ -1,7 +1,8 @@
 import { Mic, Users, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CategoryId, QuestionSummary } from "./api/types";
-import { CATEGORY_STYLE } from "./categories";
+import { CATEGORY_STYLE, questionSystemTag } from "./categories";
+import { META } from "./api/mock-api";
 
 // Claude 品牌色及其深淺變化
 const PALETTE = [
@@ -87,7 +88,7 @@ export function QuestionAvatar({
   q,
   size = 56,
 }: {
-  q: Pick<QuestionSummary, "id" | "category" | "thumbnail_url" | "has_audio" | "has_video">;
+  q: Pick<QuestionSummary, "id" | "category" | "system_tag" | "tags" | "thumbnail_url" | "has_audio" | "has_video">;
   size?: number;
 }) {
   if (q.thumbnail_url) {
@@ -120,5 +121,6 @@ export function QuestionAvatar({
       </span>
     );
   }
-  return <CategoryAvatar category={q.category} seed={q.id} size={size} />;
+  const category = META.categories.find((item) => item.label === questionSystemTag(q)?.replace(/^#/, ""))?.id ?? q.category ?? "uncategorized";
+  return <CategoryAvatar category={category} seed={q.id} size={size} />;
 }

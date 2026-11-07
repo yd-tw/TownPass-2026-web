@@ -4,10 +4,9 @@ import { MapPin, MessageCircle, Search, X } from "lucide-react";
 import { useState } from "react";
 import { Avatar } from "@/app/ui/line/avatar";
 import type { QuestionDetail } from "@/app/ui/line/api/types";
-import { categoryLabel } from "@/app/ui/line/categories";
+import { questionTags } from "@/app/ui/line/categories";
 import { AudioBubble, ImageBubble, Lightbox, VideoBubble } from "@/app/ui/line/media";
 import { useBackLayer } from "@/app/ui/line/use-back-layer";
-import { cn } from "@/lib/utils";
 
 function timeAgo(value: string, now: number) {
   const minutes = Math.max(1, Math.floor((now - Date.parse(value)) / 60_000));
@@ -150,17 +149,7 @@ export function ForumFeed({
                     <span className="flex items-center gap-1" aria-label={`${question.answer_count} 則留言`}><MessageCircle className="size-4" />{question.answer_count}</span>
                     {question.location_sharing !== "off" && <span aria-label="已開啟附近通知" title="已開啟附近通知"><MapPin className="size-4" /></span>}
                     <time dateTime={question.created_at} className="whitespace-nowrap">{timeAgo(question.created_at, now)}</time>
-                    <span
-                      className={cn(
-                        "font-semibold",
-                        question.category === "uncategorized"
-                          ? "text-tp-secondary-800"
-                          : "text-tp-gray-800",
-                      )}
-                    >
-                      #{categoryLabel(question.category)}
-                    </span>
-                    {(question.tags ?? []).slice(0, 2).map((tag) => <span key={tag} className="font-semibold text-tp-primary-500">#{tag.replace(/^#/, "")}</span>)}
+                    {questionTags(question).map((tag) => <span key={tag} className="font-semibold text-tp-primary-500">#{tag.replace(/^#/, "")}</span>)}
                   </span>
                 </div>
               </div>

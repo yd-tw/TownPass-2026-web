@@ -16,7 +16,6 @@ import {
   ApiError,
   type Answer,
   type AskerApi,
-  type CategoryId,
   type Me,
   type Meta,
   type QuestionDetail,
@@ -113,7 +112,6 @@ function errorMessage(e: unknown) {
 type Active = {
   key: string;
   id: string | null;
-  category: CategoryId;
   locationSharing: "off" | "approximate";
   /** 從 App 問題回報開啟的新問題：送出時附上裝置資訊 */
   report?: Report;
@@ -289,10 +287,10 @@ function LineAppConnected({
   const [active, setActive] = useState<Active | null>(() => {
     // 問題回報：截圖已在 LineAppInner 讀好，聊天室第一次出現就帶著
     if (report) {
-      return { key: makeId(), id: null, category: "app_usage", locationSharing: "approximate", report, instant: true };
+      return { key: makeId(), id: null, locationSharing: "approximate", report, instant: true };
     }
     return ask || new URLSearchParams(window.location.search).get("mode") === "ask"
-      ? { key: makeId(), id: null, category: "uncategorized", locationSharing: "approximate", instant: true }
+      ? { key: makeId(), id: null, locationSharing: "approximate", instant: true }
       : null;
   });
   const touchStart = useRef<{ x: number; y: number } | null>(null);
@@ -486,7 +484,6 @@ function LineAppConnected({
         setActive({
           key: id,
           id,
-          category: detail.category,
           locationSharing: detail.location_sharing === "off" ? "off" : "approximate",
         });
         return loadAnswers(id);
@@ -534,15 +531,12 @@ function LineAppConnected({
   // ---- 動作 ----
   function openQuestion(id: string) {
     const detail = details[id] ?? forumQuestions.find((question) => question.id === id);
-    const summary = questions.find((q) => q.id === id);
-    const category = detail?.category ?? summary?.category;
-    if (!category) return;
-    setActive({ key: id, id, category, locationSharing: detail?.location_sharing === "off" ? "off" : "approximate" });
+    setActive({ key: id, id, locationSharing: detail?.location_sharing === "off" ? "off" : "approximate" });
     Promise.all([loadQuestion(id), loadAnswers(id)]).catch((e) => notify(errorMessage(e), "error"));
   }
 
   function startDraft() {
-    setActive({ key: makeId(), id: null, category: "uncategorized", locationSharing: "approximate" });
+    setActive({ key: makeId(), id: null, locationSharing: "approximate" });
   }
 
   async function send(out: Outgoing) {
@@ -578,8 +572,6 @@ function LineAppConnected({
           body,
           media_ids: mediaIds,
           language: "zh-TW",
-          // 沒選分類就不傳，後端會自動分類（看不出來時為 uncategorized）
-          category: active.category === "uncategorized" ? undefined : active.category,
           assistance_mode: "online",
           location_sharing: locationSharing,
           ...(locationSharing === "off" ? {} : { location }),
@@ -589,7 +581,7 @@ function LineAppConnected({
         });
         setDetails((prev) => ({ ...prev, [q.id]: q }));
         setAnswers((prev) => ({ ...prev, [q.id]: [] }));
-        setActive((a) => (a ? { ...a, id: q.id, category: q.category, report: undefined } : a));
+        setActive((a) => (a ? { ...a, id: q.id, report: undefined } : a));
         await loadSummaries();
         await loadForumQuestions();
         notify("問題已送出，有人回答時會通知您");
@@ -612,18 +604,17 @@ function LineAppConnected({
     }
   }
 
-  /** 志工分類：只能改未分類的問題 */
-  async function classify(id: string, category: CategoryId) {
+  async function updateTags(id: string, tags: string[]) {
     try {
-      const detail = await api.setQuestionCategory(id, category);
+      const detail = await api.setQuestionTags(id, tags);
       setDetails((prev) => ({ ...prev, [id]: detail }));
-      setActive((a) => (a && a.id === id ? { ...a, category: detail.category } : a));
-      await loadForumQuestions();
-      notify("謝謝您幫忙分類！");
+      setForumQuestions((prev) => prev.map((question) => question.id === id ? detail : question));
+      await Promise.all([loadSummaries(), loadForumQuestions()]);
+      notify("標籤已更新");
+      return true;
     } catch (e) {
       notify(errorMessage(e), "error");
-      // 可能已經被別人分類了：重抓一次
-      loadQuestion(id).catch(() => {});
+      return false;
     }
   }
 
@@ -744,7 +735,6 @@ function LineAppConnected({
           key={active.key}
           meId={meId}
           question={activeQuestion ?? null}
-          category={active.category}
           answers={active.id ? (answers[active.id] ?? []) : []}
           now={now}
           limits={meta.limits}
@@ -754,7 +744,7 @@ function LineAppConnected({
           locationSharing={active.locationSharing}
           onLocationSharingChange={(value) => setActive((current) => current ? { ...current, locationSharing: value } : current)}
           onResolve={() => active.id ? resolve(active.id) : Promise.resolve()}
-          onClassify={(category) => (active.id ? classify(active.id, category) : Promise.resolve())}
+          onUpdateTags={(tags) => active.id ? updateTags(active.id, tags) : Promise.resolve(false)}
           onToggleVote={toggleVote}
           onDeleteAnswer={deleteAnswer}
           onWithdraw={() => (active.id ? withdraw(active.id) : Promise.resolve())}

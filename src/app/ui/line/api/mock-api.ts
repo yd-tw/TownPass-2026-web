@@ -64,6 +64,7 @@ function placeholderImage(label: string, tint: string) {
 const wait = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 const clone = <T>(v: T): T => structuredClone(v);
 const iso = (t: number) => new Date(t).toISOString();
+const systemTagFor = (category: CategoryId) => META.categories.find((item) => item.id === category)?.label ?? "其他";
 
 function makeId(prefix: string) {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
@@ -216,7 +217,8 @@ export function createMockApi(
       id: makeId("q"),
       status: opts.status ?? "open",
       title,
-      tags: seedTagsFor(body),
+      tags: [systemTagFor(category), ...seedTagsFor(body).filter((tag) => tag !== systemTagFor(category))],
+      system_tag: systemTagFor(category),
       category,
       language: "zh-TW",
       assistance_mode: "online",
@@ -350,7 +352,7 @@ export function createMockApi(
   forum2.author = { id: "demo-yu", nickname: "羽晴", points: 35, role: "user" };
   forum2.is_author = false;
   forum2.location_sharing = "approximate";
-  forum2.tags = ["無障礙", "交通指引"];
+  forum2.tags = [forum2.system_tag, "無障礙", "交通指引"];
   addAnswer(forum2, 29 * MIN, HELPERS.wang, "我上次從信義路側進去，步道比較平順。公園服務中心旁也有無障礙廁所。", 2);
   addAnswer(forum2, 25 * MIN, HELPERS.bot, "我是自動小幫手，出發前建議再確認公園的最新無障礙資訊。");
 
@@ -396,6 +398,7 @@ export function createMockApi(
     status: q.status,
     title: q.title,
     tags: q.tags,
+    system_tag: q.system_tag,
     category: q.category,
     language: q.language,
     assistance_mode: q.assistance_mode,
@@ -476,7 +479,7 @@ export function createMockApi(
         q,
         0,
         HELPERS.an,
-        AUTO_REPLY[q.category] ??
+        (q.category ? AUTO_REPLY[q.category] : undefined) ??
           "您好，我看到您的問題了，可以再多說明一點嗎？我來幫您看看。",
       );
       // addAnswer 以 now 為基準，這裡改成實際送出的時間
@@ -532,17 +535,18 @@ export function createMockApi(
       });
     },
 
-    async setQuestionCategory(questionId, category) {
+    async setQuestionTags(questionId, tags) {
       await wait();
       const q = findQuestion(questionId);
-      if (category === "uncategorized") {
-        throw new ApiError(400, "VALIDATION_ERROR", "category 的值不正確");
+      const fixed = q.system_tag ?? systemTagFor(q.category ?? "uncategorized");
+      const manual = [...new Set(tags.map((tag) => tag.trim().replace(/^#/, "").trim()).filter((tag) => tag !== fixed))];
+      if (manual.length > 5 || manual.some((tag) => !tag || tag.length > 20 || !/^[\p{L}\p{N} _·-]+$/u.test(tag))) {
+        throw new ApiError(400, "VALIDATION_ERROR", "標籤格式不正確");
       }
-      // 發問者本人可以改；志工只能改未分類的
-      if (q.author.id !== me.id && q.category !== "uncategorized") {
-        throw new ApiError(409, "INVALID_STATE", "這個問題已經分類過了");
+      if (q.author.id !== me.id && q.tags.slice(1).some((tag) => !manual.includes(tag))) {
+        throw new ApiError(403, "FORBIDDEN", "不能移除別人的標籤");
       }
-      q.category = category;
+      q.tags = [fixed, ...manual];
       emit({ type: "question.changed", question_id: q.id });
       emit({ type: "feed.changed" });
       return clone(q);
@@ -573,12 +577,15 @@ export function createMockApi(
       const fallbackTitle = media.some((m) => m.kind === "audio")
         ? "（語音提問）"
         : media.some((m) => m.kind === "video") ? "（影片提問）" : "（照片提問）";
+      const category = autoCategory(body);
+      const fixed = systemTagFor(category);
       const q: QuestionDetail = {
         id: makeId("q"),
         status: "open",
         title: req.title ?? (body ? body.slice(0, 30) : fallbackTitle),
-        tags: req.tags ?? [],
-        category: req.category ?? autoCategory(body),
+        tags: [fixed, ...(req.tags ?? []).filter((tag) => tag !== fixed)],
+        system_tag: fixed,
+        category,
         language: req.language,
         assistance_mode: req.assistance_mode,
         location_sharing: req.location_sharing ?? me.location_sharing,

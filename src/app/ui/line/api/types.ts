@@ -55,9 +55,11 @@ export type QuestionSummary = {
   status: QuestionStatus;
   /** 內容待個資確認時為 null */
   title: string | null;
-  /** 後端回傳的自訂標籤；分類是獨立欄位 */
+  /** 第一個是固定標籤，其餘為手動標籤 */
   tags: string[];
-  category: CategoryId;
+  system_tag: string;
+  /** 過渡期相容舊回應；新畫面以 system_tag / tags 為準 */
+  category?: CategoryId;
   language: string;
   assistance_mode: AssistanceMode;
   location_sharing: LocationSharing;
@@ -114,8 +116,6 @@ export type CreateQuestionRequest = {
   media_ids?: string[];
   tags?: string[];
   language: string;
-  /** 可不傳：後端會自動分類，不確定時為 uncategorized */
-  category?: CategoryId;
   assistance_mode: AssistanceMode;
   location_sharing?: LocationSharing;
   /** location_sharing 不是 off 時必填 */
@@ -171,11 +171,7 @@ export type AskerApi = {
   listMyQuestions(): Promise<QuestionSummary[]>;
   /** 公開討論串列表；tagQuery 會交由後端搜尋所有標籤 */
   listForumQuestions(filter?: { category?: CategoryId; tagQuery?: string; cursor?: string }): Promise<ForumPage>;
-  /**
-   * 志工分類：PUT /questions/{id}/category。
-   * 只能改未分類的問題（已分類回 409 INVALID_STATE）；不能送 uncategorized（400）。
-   */
-  setQuestionCategory(questionId: string, category: CategoryId): Promise<QuestionDetail>;
+  setQuestionTags(questionId: string, tags: string[]): Promise<QuestionDetail>;
   getQuestion(id: string): Promise<QuestionDetail>;
   createQuestion(req: CreateQuestionRequest): Promise<QuestionDetail>;
   deleteQuestion(id: string): Promise<void>;

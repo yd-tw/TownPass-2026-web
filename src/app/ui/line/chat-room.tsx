@@ -32,11 +32,10 @@ import {
   type ReactNode,
 } from "react";
 import { cn } from "@/lib/utils";
-import { META } from "./api/mock-api";
-import type { Answer, CategoryId, Media, Meta, QuestionDetail, UserRole } from "./api/types";
+import type { Answer, Media, Meta, QuestionDetail, UserRole } from "./api/types";
 import { Avatar, QuestionAvatar } from "./avatar";
-import { categoryLabel } from "./categories";
-import { IconButton, Sheet } from "./chat-list";
+import { isUncategorized, needsTagHelp, questionManualTags, questionSystemTag } from "./categories";
+import { IconButton } from "./chat-list";
 import { formatClock, formatDateDivider, isSameDay } from "./format";
 import { AudioBubble, ImageBubble, Lightbox, VideoBubble, VoiceRecorder } from "./media";
 import type { Notify, Outgoing } from "./types";
@@ -75,7 +74,6 @@ export type ChatRoomProps = {
   meId: string;
   /** null 表示還沒送出的新問題 */
   question: QuestionDetail | null;
-  category: CategoryId;
   answers: Answer[];
   now: number;
   limits: Meta["limits"];
@@ -83,8 +81,7 @@ export type ChatRoomProps = {
   onBack: () => void;
   onSend: (out: Outgoing) => Promise<boolean>;
   onResolve: () => Promise<void>;
-  /** 志工幫未分類的問題選分類（PUT /questions/{id}/category） */
-  onClassify: (category: CategoryId) => Promise<void>;
+  onUpdateTags: (tags: string[]) => Promise<boolean>;
   onToggleVote: (answer: Answer, value: 1 | -1) => Promise<void>;
   onDeleteAnswer: (answer: Answer) => void;
   onWithdraw: () => Promise<void>;
@@ -141,9 +138,10 @@ export function ChatRoom(props: ChatRoomProps) {
   const [menu, setMenu] = useState<{ post: Post; top: number } | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [resolving, setResolving] = useState(false);
-  const [classifyOpen, setClassifyOpen] = useState(false);
+  const [tagSaving, setTagSaving] = useState(false);
   const [votingIds, setVotingIds] = useState<Set<string>>(() => new Set());
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [focusTagInput, setFocusTagInput] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   /** 待傳圖片的放大預覽（blob: 網址，關閉時釋放） */
   const [preview, setPreview] = useState<string | null>(null);
@@ -156,7 +154,7 @@ export function ChatRoom(props: ChatRoomProps) {
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const isAuthor = !question || question.author.id === meId;
 
-  const label = categoryLabel(props.category);
+  const label = question ? questionSystemTag(question) : null;
   const othersAnswers = useMemo(
     () => answers.filter((a) => a.author.id !== meId),
     [answers, meId],
@@ -218,7 +216,7 @@ export function ChatRoom(props: ChatRoomProps) {
           type: "note",
           key: "asked-note",
           text:
-            props.category === "uncategorized" || props.category === "other"
+            !label || (question && isUncategorized(question)) || label === "其他"
               ? `${author} 開了一個新問題`
               : `${author} 開了一個「${label}」的問題`,
         });
@@ -233,7 +231,7 @@ export function ChatRoom(props: ChatRoomProps) {
       prev = p;
     }
     return out;
-  }, [posts, question, label, now, props.category, props.draftHint]);
+  }, [posts, question, label, now, props.draftHint]);
 
   // ---- 手機返回鍵：由上往下一層一層關 ----
   useBackLayer(true, props.onBack);
@@ -368,6 +366,13 @@ export function ChatRoom(props: ChatRoomProps) {
     finally { setResolving(false); }
   }
 
+  async function updateTags(tags: string[]) {
+    if (!question || tagSaving) return false;
+    setTagSaving(true);
+    try { return await props.onUpdateTags(tags); }
+    finally { setTagSaving(false); }
+  }
+
   async function toggleVote(answer: Answer, value: 1 | -1) {
     if (votingIds.has(answer.id)) return;
     setVotingIds((previous) => new Set(previous).add(answer.id));
@@ -416,54 +421,19 @@ export function ChatRoom(props: ChatRoomProps) {
         if (dx < -85 && Math.abs(dx) > Math.abs(dy) * 1.4) props.onBack();
       }}
     >
-      {question && !isAuthor && question.category === "uncategorized" && (
+      {question && needsTagHelp(question) && (
         <div className="mx-3 my-2 flex shrink-0 items-center gap-2 rounded-xl bg-white px-3 py-2 ring-1 ring-tp-gray-100">
           <Tag className="size-5 shrink-0 text-tp-primary-500" />
-          <span className="min-w-0 flex-1 text-[15px] text-tp-gray-900">這題還沒有分類</span>
+          <span className="min-w-0 flex-1 text-[15px] text-tp-gray-900">這題還沒有標籤</span>
           <button
             type="button"
-            onClick={() => setClassifyOpen(true)}
+            onClick={() => { setFocusTagInput(true); setDrawerOpen(true); }}
             className="min-h-10 shrink-0 rounded-full bg-tp-primary-500 px-4 text-[15px] font-bold text-white active:bg-tp-primary-600"
           >
-            幫忙分類
+            協助標籤
           </button>
         </div>
       )}
-      {classifyOpen && (
-        <Sheet onClose={() => setClassifyOpen(false)}>
-          <div className="px-5 pt-5 pb-4">
-            <h2 className="text-center text-[19px] font-bold">這題是關於什麼？</h2>
-            <p className="mt-1 text-center text-[14px] text-tp-gray-700">選一個最接近的，選了之後就不能再改</p>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              {/* 「未分類」不能選，送出會回 400 */}
-              {META.categories
-                .filter((c) => c.id !== "uncategorized")
-                .map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => {
-                      setClassifyOpen(false);
-                      props.onClassify(c.id);
-                    }}
-                    className="min-h-12 rounded-xl bg-white px-3 text-[16px] font-medium text-tp-gray-900 ring-1 ring-tp-gray-100 active:bg-tp-gray-100/50"
-                  >
-                    {c.label}
-                  </button>
-                ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => setClassifyOpen(false)}
-              className="mt-2 w-full py-3 text-[17px] text-tp-gray-700"
-            >
-              取消
-            </button>
-          </div>
-        </Sheet>
-      )}
-
-
       <div className="relative min-h-0 flex-1">
         <div
           ref={listRef}
@@ -621,7 +591,7 @@ export function ChatRoom(props: ChatRoomProps) {
           )}
           <div className="flex min-w-0 items-end gap-0.5">
           {!question && <IconButton label="發問額外選項" onClick={() => { setAttachmentMenuOpen(false); setDraftOptionsOpen((open) => !open); }} className={INPUT_BUTTON}><MoreHorizontal className="size-5" /></IconButton>}
-          {question && <IconButton label="問題選單" onClick={() => { setAttachmentMenuOpen(false); setDrawerOpen(true); }} className={INPUT_BUTTON}><Menu className="size-5" /></IconButton>}
+          {question && <IconButton label="問題選單" onClick={() => { setAttachmentMenuOpen(false); setFocusTagInput(false); setDrawerOpen(true); }} className={INPUT_BUTTON}><Menu className="size-5" /></IconButton>}
           <IconButton label="新增附件" disabled={sending || checkingVideo} onClick={() => { setDraftOptionsOpen(false); setAttachmentMenuOpen((open) => !open); }} className={INPUT_BUTTON}><Plus className="size-6" /></IconButton>
           <div className="mx-1 flex min-h-11 min-w-0 flex-1 items-end rounded-[22px] bg-tp-gray-100/70 px-4 max-[300px]:px-2">
             <textarea
@@ -699,6 +669,9 @@ export function ChatRoom(props: ChatRoomProps) {
           isAuthor={isAuthor}
           onClose={() => setDrawerOpen(false)}
           onWithdraw={() => setConfirm({ kind: "withdraw" })}
+          onUpdateTags={updateTags}
+          tagSaving={tagSaving}
+          focusTagInput={focusTagInput}
         />
       )}
 
@@ -977,22 +950,53 @@ function QuestionDrawer({
   isAuthor,
   onClose,
   onWithdraw,
+  onUpdateTags,
+  tagSaving,
+  focusTagInput,
 }: {
   question: QuestionDetail;
   answerCount: number;
   isAuthor: boolean;
   onClose: () => void;
   onWithdraw: () => void;
+  onUpdateTags: (tags: string[]) => Promise<boolean>;
+  tagSaving: boolean;
+  focusTagInput: boolean;
 }) {
+  const [tagDraft, setTagDraft] = useState("");
+  const [tagError, setTagError] = useState("");
+  const tagInputRef = useRef<HTMLInputElement>(null);
+  const fixedTag = isUncategorized(question) ? null : questionSystemTag(question);
+  const manualTags = questionManualTags(question);
+  useEffect(() => {
+    if (focusTagInput) tagInputRef.current?.focus();
+  }, [focusTagInput]);
   const statusLabel =
     question.status === "resolved" ? "已解決" : question.status === "in_progress" ? "協助中" : "等待回答";
   const asked = new Date(question.created_at);
   const rows: [string, string][] = [
-    ["分類", categoryLabel(question.category)],
     ["狀態", statusLabel],
     ["回答", `${answerCount} 則`],
     ["發問時間", `${asked.getMonth() + 1}/${asked.getDate()} ${formatClock(asked.getTime())}`],
   ];
+
+  async function addTag() {
+    const tag = tagDraft.trim().replace(/^#/, "").trim();
+    if (!tag || tag.length > 20 || !/^[\p{L}\p{N} _·-]+$/u.test(tag)) {
+      setTagError("標籤需為 1 至 20 字，只能使用文字、數字、空白、-、_、·");
+      return;
+    }
+    if (manualTags.length >= 5) {
+      setTagError("手動標籤最多 5 個");
+      return;
+    }
+    if ([questionSystemTag(question), ...manualTags].filter(Boolean).some((current) => current.replace(/^#/, "").toLocaleLowerCase() === tag.toLocaleLowerCase())) {
+      setTagError("這個標籤已存在");
+      return;
+    }
+    setTagError("");
+    if (await onUpdateTags([...manualTags, tag])) setTagDraft("");
+  }
 
   return (
     <div className="absolute inset-0 z-40">
@@ -1014,14 +1018,33 @@ function QuestionDrawer({
             {question.body ?? "（內容待確認）"}
           </p>
         </div>
-        <dl className="flex-1 overflow-y-auto border-t border-tp-gray-100/70 px-5 py-2">
-          {rows.map(([k, v]) => (
-            <div key={k} className="flex justify-between border-b border-tp-gray-100/60 py-3 text-[15px]">
-              <dt className="text-tp-gray-600">{k}</dt>
-              <dd className="font-medium text-tp-gray-900">{v}</dd>
+        <div className="min-h-0 flex-1 overflow-y-auto border-t border-tp-gray-100/70 px-5 py-2">
+          <section className="border-b border-tp-gray-100/60 py-3">
+            <h3 className="text-[15px] text-tp-gray-600">標籤</h3>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {fixedTag && <span className="rounded-lg bg-tp-primary-50 px-2 py-1.5 text-[14px] font-semibold text-tp-primary-500">#{fixedTag.replace(/^#/, "")}</span>}
+              {manualTags.map((tag, index) => (
+                <span key={`${tag}-${index}`} className="flex max-w-full items-center rounded-lg bg-tp-primary-50 text-[14px] font-semibold text-tp-primary-500">
+                  <span className="truncate px-2 py-1.5">#{tag.replace(/^#/, "")}</span>
+                  {isAuthor && <button type="button" aria-label={`移除標籤 ${tag}`} disabled={tagSaving} onClick={() => void onUpdateTags(manualTags.filter((_, i) => i !== index))} className="flex size-8 shrink-0 items-center justify-center disabled:opacity-50"><X className="size-4" /></button>}
+                </span>
+              ))}
             </div>
-          ))}
-        </dl>
+            <div className="mt-3 flex min-w-0 gap-2">
+              <input ref={tagInputRef} type="text" aria-label="手動輸入標籤" placeholder="手動輸入標籤" value={tagDraft} maxLength={21} onChange={(event) => { setTagDraft(event.target.value); setTagError(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addTag(); } }} className="min-w-0 flex-1 rounded-lg bg-white px-2 text-[14px] text-tp-gray-900 ring-1 ring-tp-gray-100" />
+              <button type="button" disabled={tagSaving || manualTags.length >= 5} onClick={() => void addTag()} className="min-h-10 shrink-0 rounded-lg bg-tp-primary-500 px-3 text-[14px] font-semibold text-white disabled:opacity-50">新增</button>
+            </div>
+            {tagError && <p role="alert" className="mt-2 text-[12px] text-tp-warn-200">{tagError}</p>}
+          </section>
+          <dl>
+            {rows.map(([k, v]) => (
+              <div key={k} className="flex justify-between gap-2 border-b border-tp-gray-100/60 py-3 text-[15px]">
+                <dt className="text-tp-gray-600">{k}</dt>
+                <dd className="text-right font-medium text-tp-gray-900">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
         {isAuthor && <button
           type="button"
           onClick={onWithdraw}

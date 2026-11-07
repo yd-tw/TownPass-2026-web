@@ -230,10 +230,8 @@ export function createHttpApi(
 
     getQuestion: (id) => data<QuestionDetail>("GET", `/questions/${encodeURIComponent(id)}`),
 
-    setQuestionCategory: (questionId, category) =>
-      data<QuestionDetail>("PUT", `/questions/${encodeURIComponent(questionId)}/category`, {
-        category,
-      }),
+    setQuestionTags: (questionId, tags) =>
+      data<QuestionDetail>("PUT", `/questions/${encodeURIComponent(questionId)}/tags`, { tags }),
 
     createQuestion: (req) => data<QuestionDetail>("POST", "/questions", req),
 

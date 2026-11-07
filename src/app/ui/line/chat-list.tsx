@@ -3,10 +3,9 @@
 import { Plus, Search, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import type { Answer, CategoryId, QuestionDetail, QuestionSummary } from "./api/types";
-import { META } from "./api/mock-api";
+import type { Answer, QuestionDetail, QuestionSummary } from "./api/types";
 import { QuestionAvatar } from "./avatar";
-import { categoryLabel } from "./categories";
+import { questionTags } from "./categories";
 import { answerPreview, formatListTime } from "./format";
 import { useBackLayer } from "./use-back-layer";
 
@@ -69,7 +68,7 @@ export function ChatList({
       .filter((r) => {
         if (!q) return true;
         if (r.body.toLowerCase().includes(q)) return true;
-        if (categoryLabel(r.q.category).includes(q)) return true;
+        if (questionTags(r.q).some((tag) => tag.toLowerCase().includes(q))) return true;
         return (answers[r.q.id] ?? []).some((a) =>
           (a.body ?? "").toLowerCase().includes(q),
         );
@@ -222,10 +221,9 @@ export function AskSheet({
   onAsk,
   onClose,
 }: {
-  onAsk: (category: CategoryId) => void;
+  onAsk: () => void;
   onClose: () => void;
 }) {
-  const [category, setCategory] = useState<CategoryId>("uncategorized");
   return (
     <Sheet onClose={onClose}>
       <div className="px-5 pt-6 pb-4">
@@ -235,23 +233,9 @@ export function AskSheet({
           <br />
           可以打字、拍照或錄音說明您的問題
         </p>
-        <label className="mt-5 flex items-center justify-center gap-2 text-[15px] text-tp-gray-700">
-          分類
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value as CategoryId)}
-            className="h-10 rounded-lg border border-tp-gray-100 bg-white px-2 text-[15px] text-tp-gray-900 outline-none focus:border-tp-primary-500"
-          >
-            {META.categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </label>
         <button
           type="button"
-          onClick={() => onAsk(category)}
+          onClick={onAsk}
           className="mt-4 w-full rounded-2xl bg-tp-primary-500 py-4 text-[20px] font-bold text-white shadow-sm active:bg-tp-primary-600"
         >
           發問
