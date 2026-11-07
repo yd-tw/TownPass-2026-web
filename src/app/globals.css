@@ -128,3 +128,23 @@
     @apply font-sans;
   }
 }
+/* 水平捲動的分類標籤列不顯示捲軸 */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Claude（Anthropic 品牌）配色，LINE 風格聊天室使用 */
+@theme {
+  --color-claude: #d97757;
+  --color-claude-dark: #c6613f;
+  --color-claude-ink: #141413;
+  --color-claude-ivory: #faf9f5;
+  --color-claude-cream: #f0eee6;
+  --color-claude-sand: #e8e6dc;
+  --color-claude-gray: #b0aea5;
+  --color-claude-blue: #6a9bcc;
+  --color-claude-green: #788c5d;
+}
