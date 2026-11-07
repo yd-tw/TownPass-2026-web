@@ -357,6 +357,40 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
     };
   }, [api, loadAll, loadForumQuestions, notify]);
 
+  // 點推播通知會開啟 ?question={id}：首次載入完成後直接打開那則對話。
+  // 問題可能不在自己的清單或論壇列表裡，所以另外抓一次詳情。
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (loading || deepLinkHandled.current) return;
+    deepLinkHandled.current = true;
+    const url = new URL(window.location.href);
+    const id = url.searchParams.get("question");
+    if (!id) return;
+    // 移除參數，重新整理或返回時才不會一直跳回這則對話
+    url.searchParams.delete("question");
+    window.history.replaceState(window.history.state, "", url);
+
+    const p = prefs[id];
+    const firstUnread = (answers[id] ?? []).find(
+      (a) => a.author.id !== me?.id && p && a.created_at > p.lastSeenAt,
+    );
+    // 在 then 裡才開始載入，避免在 effect 本體同步 setState
+    Promise.resolve()
+      .then(() => loadQuestion(id))
+      .then((detail) => {
+        setActive({
+          key: id,
+          id,
+          category: detail.category,
+          locationSharing: detail.location_sharing === "off" ? "off" : "approximate",
+          marker: firstUnread?.id ?? null,
+        });
+        markSeen(id);
+        return loadAnswers(id);
+      })
+      .catch((e) => notify(errorMessage(e), "error"));
+  }, [loading, prefs, answers, me, loadQuestion, loadAnswers, markSeen, notify]);
+
   // 偏好有變就存起來（重新整理後未讀數才不會全部回來）
   useEffect(() => {
     if (!me) return;
