@@ -9,10 +9,13 @@ import {
   type TouchEvent,
 } from "react";
 import { createMockApi } from "./api/mock-api";
+import { getCurrentLocation } from "./api/location";
+import { connectBackend, getIdentity } from "./api/session";
 import { ForumFeed } from "@/app/ui/forum/forum-feed";
 import {
   ApiError,
   type Answer,
+  type AskerApi,
   type CategoryId,
   type Me,
   type QuestionDetail,
@@ -24,6 +27,8 @@ import { BottomNav, HomeTab } from "./other-tabs";
 import { unreadCount, type Notify, type Outgoing, type QuestionPrefs, type Tab } from "./types";
 
 const NICK_KEY = "line-demo-nickname";
+/** 未讀位置、釘選、提醒等本機偏好，依使用者分開存 */
+const prefsKey = (userId: string) => `line-prefs:${userId}`;
 
 const noopSubscribe = () => () => {};
 
@@ -108,13 +113,91 @@ type Active = {
   marker: string | null;
 };
 
+type Connection =
+  | { status: "connecting" }
+  | { status: "error"; message: string }
+  | { status: "ready"; api: AskerApi; note: string | null };
+
+/**
+ * 先連上後端再顯示畫面。
+ * - 網址加上 ?demo=mock 用示範資料；?demo=crowd 模擬發問後有 50～100 位志工回答
+ * - 在城市通 App 內用 userinfo.id 登入；一般瀏覽器用這台瀏覽器的測試帳號
+ */
 function LineAppInner() {
-  // 網址加上 ?demo=crowd 可模擬發問後有 50～100 位志工回答
-  const [api] = useState(() =>
-    createMockApi(readNickname(), {
-      crowd: new URLSearchParams(window.location.search).get("demo") === "crowd",
-    }),
+  const [attempt, setAttempt] = useState(0);
+  const [conn, setConn] = useState<Connection>({ status: "connecting" });
+
+  useEffect(() => {
+    let cancelled = false;
+    let created: AskerApi | null = null;
+    const demo = new URLSearchParams(window.location.search).get("demo");
+    Promise.resolve()
+      .then(async () => {
+        if (demo === "mock" || demo === "crowd") {
+          return {
+            api: createMockApi(readNickname(), { crowd: demo === "crowd" }),
+            note: "示範模式：資料只存在這個分頁，重新整理就會重置",
+          };
+        }
+        const identity = await getIdentity();
+        return {
+          api: await connectBackend(identity, readNickname()),
+          note: identity.isWebTest ? "瀏覽器測試帳號：目前不是在城市通 App 裡開啟" : null,
+        };
+      })
+      .then(({ api, note }) => {
+        created = api;
+        if (cancelled) api.close();
+        else setConn({ status: "ready", api, note });
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setConn({
+            status: "error",
+            message: e instanceof ApiError || e instanceof Error ? e.message : "連線失敗",
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+      created?.close();
+    };
+  }, [attempt]);
+
+  if (conn.status === "ready") {
+    return <LineAppConnected key={attempt} api={conn.api} note={conn.note} />;
+  }
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
+      {conn.status === "connecting" ? (
+        <>
+          <span className="size-10 animate-spin rounded-full border-4 border-claude border-t-transparent" />
+          <p className="text-[17px] text-stone-600">連線中…</p>
+        </>
+      ) : (
+        <>
+          <p className="text-[19px] font-bold text-claude-ink">暫時連不上</p>
+          <p className="text-[16px] text-stone-600">
+            請確認網路有開，再按下面的按鈕試一次
+          </p>
+          <p className="text-[13px] text-stone-400">{conn.message}</p>
+          <button
+            type="button"
+            onClick={() => {
+              setConn({ status: "connecting" });
+              setAttempt((n) => n + 1);
+            }}
+            className="mt-2 w-full max-w-xs rounded-2xl bg-claude py-4 text-[20px] font-bold text-white active:bg-claude-dark"
+          >
+            重新連線
+          </button>
+        </>
+      )}
+    </div>
   );
+}
+
+function LineAppConnected({ api, note }: { api: AskerApi; note: string | null }) {
   const [me, setMe] = useState<Me | null>(null);
   const [questions, setQuestions] = useState<QuestionSummary[]>([]);
   const [forumQuestions, setForumQuestions] = useState<QuestionDetail[]>([]);
@@ -238,7 +321,18 @@ function LineAppInner() {
     Promise.resolve()
       .then(() => Promise.all([api.getMe(), loadAll(), loadForumQuestions()]))
       .then(([m]) => {
-        if (!cancelled) setMe(m);
+        if (cancelled) return;
+        setMe(m);
+        // 本機存的未讀位置、釘選、提醒蓋過預設值
+        try {
+          const saved = localStorage.getItem(prefsKey(m.id));
+          if (saved) {
+            const stored = JSON.parse(saved) as Record<string, QuestionPrefs>;
+            setPrefs((prev) => ({ ...prev, ...stored }));
+          }
+        } catch {
+          // 讀不到就用預設值
+        }
       })
       .catch((e) => {
         if (!cancelled) notify(errorMessage(e), "error");
@@ -250,6 +344,22 @@ function LineAppInner() {
       cancelled = true;
     };
   }, [api, loadAll, loadForumQuestions, notify]);
+
+  // 偏好有變就存起來（重新整理後未讀數才不會全部回來）
+  useEffect(() => {
+    if (!me) return;
+    try {
+      localStorage.setItem(prefsKey(me.id), JSON.stringify(prefs));
+    } catch {
+      // 存不了就算了：只是便利功能
+    }
+  }, [me, prefs]);
+
+  // 只訂閱自己的問題和正在看的問題（question:subscribe）
+  const activeId = active?.id ?? null;
+  useEffect(() => {
+    api.watch([...questions.map((q) => q.id), ...(activeId ? [activeId] : [])]);
+  }, [api, questions, activeId]);
 
   // ---- 即時訊號：收到後用 REST 重抓（同 api-spec.md 的做法） ----
   useEffect(
@@ -327,13 +437,21 @@ function LineAppInner() {
       }
 
       if (active.id === null) {
+        // 要通知附近的人就得附上位置；拿不到位置時這題改成不分享
+        let locationSharing = active.locationSharing;
+        const location = locationSharing === "off" ? null : await getCurrentLocation();
+        if (locationSharing !== "off" && !location) {
+          locationSharing = "off";
+          notify("沒有取得位置，這個問題不會通知附近的人");
+        }
         const q = await api.createQuestion({
           body,
           media_ids: mediaIds,
           language: "zh-TW",
           category: active.category,
           assistance_mode: "online",
-          location_sharing: active.locationSharing,
+          location_sharing: locationSharing,
+          location,
           client_request_id: makeId(),
         });
         setDetails((prev) => ({ ...prev, [q.id]: q }));
@@ -466,6 +584,7 @@ function LineAppInner() {
             onNicknameChange={changeNickname}
             onAsk={startDraft}
             onShowChats={() => setTab("chats")}
+            note={note}
           />
         ) : tab === "chats" ? (
           <ChatList

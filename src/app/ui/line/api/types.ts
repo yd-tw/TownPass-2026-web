@@ -60,8 +60,10 @@ export type QuestionSummary = {
   assistance_mode: AssistanceMode;
   location_sharing: LocationSharing;
   author: PublicUser;
-  context: null;
-  area: null;
+  /** 從城市通頁面發問時的來源；App 外的問題為 null */
+  context: Record<string, unknown> | null;
+  /** 公開的概略位置 */
+  area: Record<string, unknown> | null;
   thumbnail_url: string | null;
   has_audio?: boolean;
   answer_count: number;
@@ -97,6 +99,12 @@ export type Answer = {
   created_at: string;
 };
 
+export type Coordinates = {
+  lat: number;
+  lng: number;
+  accuracy_m?: number;
+};
+
 export type CreateQuestionRequest = {
   title?: string;
   body?: string;
@@ -105,6 +113,8 @@ export type CreateQuestionRequest = {
   category: CategoryId;
   assistance_mode: AssistanceMode;
   location_sharing?: LocationSharing;
+  /** location_sharing 不是 off 時必填 */
+  location?: Coordinates | null;
   client_request_id: string;
 };
 
@@ -131,6 +141,7 @@ export type Meta = {
 
 /** Socket.IO 只送「有更新」的訊號，前端收到後再用 REST 重抓 */
 export type Signal =
+  /** 需要整個重抓（也用在斷線重連之後） */
   | { type: "feed.changed" }
   | { type: "question.changed"; question_id: string }
   | { type: "answers.changed"; question_id: string };
@@ -161,6 +172,10 @@ export type AskerApi = {
   ): Promise<Media>;
   /** 對應 Socket.IO 的 answers.changed 等訊號 */
   subscribe(listener: (signal: Signal) => void): () => void;
+  /** 要收哪些問題的即時訊號（question:subscribe / unsubscribe） */
+  watch(questionIds: string[]): void;
+  /** 關閉連線 */
+  close(): void;
 };
 
 export class ApiError extends Error {

@@ -697,5 +697,13 @@ export function createMockApi(
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+
+    watch() {
+      // 模擬後端會把所有訊號都送出，不需要訂閱
+    },
+
+    close() {
+      listeners.clear();
+    },
   };
 }

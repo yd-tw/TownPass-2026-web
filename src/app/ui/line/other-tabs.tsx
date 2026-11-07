@@ -67,12 +67,15 @@ export function HomeTab({
   onNicknameChange,
   onAsk,
   onShowChats,
+  note,
 }: {
   me: Me | null;
   stats: { total: number; waiting: number; resolved: number };
   onNicknameChange: (name: string) => Promise<boolean>;
   onAsk: () => void;
   onShowChats: () => void;
+  /** 目前的連線模式說明（示範模式、瀏覽器測試帳號）；在 App 內正式使用時不顯示 */
+  note?: string | null;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -162,9 +165,9 @@ export function HomeTab({
           </p>
         </section>
 
-        <p className="px-4 pb-6 text-center text-[12px] text-stone-500">
-          示範模式：資料只存在這個分頁，重新整理就會重置
-        </p>
+        {note && (
+          <p className="px-4 pb-6 text-center text-[12px] text-stone-500">{note}</p>
+        )}
       </div>
     </div>
   );
