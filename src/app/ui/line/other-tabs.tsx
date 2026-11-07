@@ -1,20 +1,10 @@
 "use client";
 
-import {
-  ChevronRight,
-  House,
-  MessageCircle,
-  MessageCircleQuestion,
-  MessagesSquare,
-  type LucideIcon,
-} from "lucide-react";
+import { MessageCircle, MessagesSquare, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { QuestionSummary } from "./api/types";
-import { QuestionAvatar } from "./avatar";
 import type { Tab } from "./types";
 
 const NAV: { id: Tab; label: string; icon: LucideIcon }[] = [
-  { id: "home", label: "主頁", icon: House },
   { id: "chats", label: "聊天", icon: MessageCircle },
   { id: "forum", label: "討論串", icon: MessagesSquare },
 ];
@@ -27,7 +17,7 @@ export function BottomNav({
   onChange: (tab: Tab) => void;
 }) {
   return (
-    <nav className="grid shrink-0 grid-cols-3 border-t border-tp-gray-100 bg-white pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
+    <nav className="grid shrink-0 grid-cols-2 border-t border-tp-gray-100 bg-white pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
       {NAV.map(({ id, label, icon: Icon }) => {
         const active = tab === id;
         return (
@@ -38,7 +28,7 @@ export function BottomNav({
             aria-current={active ? "page" : undefined}
             className={cn(
               "relative flex min-h-14 flex-col items-center justify-center gap-0.5 text-[13px]",
-              // 三個分頁的選中樣式一致：品牌色＋較粗的線，不填滿
+              // 分頁的選中樣式一致：品牌色＋較粗的線，不填滿
               active ? "font-bold text-tp-primary-500" : "text-tp-gray-600",
             )}
           >
@@ -48,101 +38,5 @@ export function BottomNav({
         );
       })}
     </nav>
-  );
-}
-
-export type HomeQuestion = {
-  q: QuestionSummary;
-  /** 別人的回答數 */
-  answered: number;
-};
-
-/** 問題的進度，用一句白話說 */
-function statusText({ q, answered }: HomeQuestion) {
-  if (q.status === "resolved") return { text: "已解決", className: "text-tp-gray-700" };
-  if (q.status === "in_progress") return { text: "有人在協助您", className: "text-tp-secondary-800" };
-  if (answered > 0) return { text: `已有 ${answered} 人回答`, className: "text-tp-gray-700" };
-  return { text: "等待回答中", className: "text-tp-gray-700" };
-}
-
-/**
- * 主頁只放長輩最需要的兩件事：
- * 1. 我要發問（最大的按鈕）
- * 2. 我的問題進度（最多三題，各一句狀態）
- */
-export function HomeTab({
-  questions,
-  onAsk,
-  onOpen,
-  onShowChats,
-  note,
-}: {
-  /** 自己的問題，新的在前 */
-  questions: HomeQuestion[];
-  onAsk: () => void;
-  onOpen: (id: string) => void;
-  onShowChats: () => void;
-  /** 目前的連線模式說明（示範模式、瀏覽器測試帳號）；在 App 內正式使用時不顯示 */
-  note?: string | null;
-}) {
-  const recent = questions.slice(0, 3);
-
-  return (
-    <div className="flex h-full flex-col bg-tp-gray-50">
-      <div className="flex-1 overflow-y-auto px-4 pt-3 pb-6">
-        <button
-          type="button"
-          onClick={onAsk}
-          className="mt-1 flex w-full items-center justify-center gap-2 rounded-2xl bg-tp-primary-500 py-6 text-[22px] font-bold text-white shadow-sm active:bg-tp-primary-600"
-        >
-          <MessageCircleQuestion className="size-8" />
-          我要發問
-        </button>
-        <p className="mt-2 text-center text-[16px] text-tp-gray-700">打字、拍照、錄音都可以</p>
-
-        {recent.length > 0 && (
-          <section className="mt-8">
-            <div className="flex items-center justify-between pb-2">
-              <h2 className="text-[18px] font-bold text-tp-gray-900">我的問題</h2>
-              {questions.length > recent.length && (
-                <button
-                  type="button"
-                  onClick={onShowChats}
-                  className="flex min-h-11 items-center gap-0.5 text-[16px] text-tp-primary-500"
-                >
-                  全部
-                  <ChevronRight className="size-5" />
-                </button>
-              )}
-            </div>
-            <ul className="overflow-hidden rounded-2xl border border-tp-gray-100 bg-white">
-              {recent.map((item) => {
-                const status = statusText(item);
-                return (
-                  <li key={item.q.id} className="not-last:border-b not-last:border-tp-gray-100">
-                    <button
-                      type="button"
-                      onClick={() => onOpen(item.q.id)}
-                      className="flex min-h-18 w-full items-center gap-3 px-3 py-3 text-left active:bg-tp-gray-100/40"
-                    >
-                      <QuestionAvatar q={item.q} size={44} />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[17px] font-semibold text-tp-gray-900">
-                          {item.q.title ?? "（內容待確認）"}
-                        </p>
-                        <p className={cn("text-[15px]", status.className)}>{status.text}</p>
-                      </div>
-                      <ChevronRight className="size-5 shrink-0 text-tp-gray-400" />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        )}
-
-        {note && <p className="mt-8 text-center text-[12px] text-tp-gray-600">{note}</p>}
-      </div>
-    </div>
   );
 }

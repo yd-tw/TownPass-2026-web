@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -24,7 +25,7 @@ import {
 } from "./api/types";
 import { ChatRoom, type PendingMedia } from "./chat-room";
 import { ChatList, type ChatListActions } from "./chat-list";
-import { BottomNav, HomeTab } from "./other-tabs";
+import { BottomNav } from "./other-tabs";
 import type { Notify, Outgoing, Tab } from "./types";
 import { callApp, isInTownPass, type ReportDraft } from "@/lib/townpass-bridge";
 
@@ -37,7 +38,7 @@ const noopSubscribe = () => () => {};
  * 範例資料的時間是相對於「現在」產生的，而 Cache Components 會預先渲染
  * Client Component，所以整個 App 只在瀏覽器端掛載，伺服器端只輸出外框。
  */
-const TAB_TITLE: Record<Tab, string> = { home: "主頁", chats: "聊天", forum: "討論串" };
+const TAB_TITLE: Record<Tab, string> = { chats: "聊天", forum: "討論串" };
 
 /**
  * @param ask 一開啟就進入新問題聊天室（/new「我要發問」）
@@ -319,7 +320,8 @@ function LineAppConnected({
   const [answers, setAnswers] = useState<Record<string, Answer[]>>({});
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(() => Date.now());
-  const [tab, setTab] = useState<Tab>("home");
+  const pathname = usePathname();
+  const tab: Tab = pathname === "/forum" ? "forum" : "chats";
   const [active, setActive] = useState<Active | null>(() => {
     // 問題回報：截圖已在 LineAppInner 讀好，聊天室第一次出現就帶著
     if (report) {
@@ -731,6 +733,13 @@ function LineAppConnected({
   const meId = me?.id ?? "";
   const activeQuestion = active?.id ? details[active.id] ?? forumQuestions.find((q) => q.id === active.id) : null;
 
+  function switchTab(next: Tab) {
+    if (next === tab && (pathname === "/chat" || pathname === "/forum")) return;
+    const demo = new URLSearchParams(window.location.search).get("demo");
+    const nextPath = next === "forum" ? "/forum" : "/chat";
+    window.history.pushState(null, "", `${nextPath}${demo ? `?demo=${encodeURIComponent(demo)}` : ""}`);
+  }
+
   function endSwipe(event: TouchEvent<HTMLDivElement>) {
     const start = touchStart.current;
     touchStart.current = null;
@@ -738,9 +747,9 @@ function LineAppConnected({
     const dx = event.changedTouches[0].clientX - start.x;
     const dy = event.changedTouches[0].clientY - start.y;
     if (Math.abs(dx) < 80 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
-    const order: Tab[] = ["home", "chats", "forum"];
+    const order: Tab[] = ["chats", "forum"];
     const next = order.indexOf(tab) + (dx < 0 ? 1 : -1);
-    if (next >= 0 && next < order.length) setTab(order[next]);
+    if (next >= 0 && next < order.length) switchTab(order[next]);
   }
 
   return (
@@ -750,18 +759,7 @@ function LineAppConnected({
         onTouchStart={(event) => { touchStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY }; }}
         onTouchEnd={endSwipe}
       >
-        {tab === "home" ? (
-          <HomeTab
-            questions={questions.map((q) => ({
-              q,
-              answered: (answers[q.id] ?? []).filter((a) => a.author.id !== meId).length,
-            }))}
-            onAsk={startDraft}
-            onOpen={openQuestion}
-            onShowChats={() => setTab("chats")}
-            note={note}
-          />
-        ) : tab === "chats" ? (
+        {tab === "chats" ? (
           <ChatList
             questions={questions}
             details={details}
@@ -769,6 +767,7 @@ function LineAppConnected({
             meId={meId}
             now={now}
             loading={loading}
+            note={note}
             actions={listActions}
           />
         ) : (
@@ -796,7 +795,7 @@ function LineAppConnected({
           />
         )}
       </div>
-      <BottomNav tab={tab} onChange={setTab} />
+      <BottomNav tab={tab} onChange={switchTab} />
 
       {active && (active.id === null || activeQuestion) && (
         <ChatRoom
@@ -807,7 +806,7 @@ function LineAppConnected({
           now={now}
           limits={meta.limits}
           sending={sending}
-          onBack={() => setActive(null)}
+          onBack={() => { setActive(null); if (pathname === "/new") switchTab("chats"); }}
           onSend={send}
           locationSharing={active.locationSharing}
           onLocationSharingChange={(value) => setActive((current) => current ? { ...current, locationSharing: value } : current)}

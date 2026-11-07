@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Search, X } from "lucide-react";
+import { MessageCircleQuestion, Plus, Search, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { Answer, QuestionDetail, QuestionSummary } from "./api/types";
@@ -36,6 +36,7 @@ export function ChatList({
   meId,
   now,
   loading,
+  note,
   actions,
 }: {
   questions: QuestionSummary[];
@@ -44,6 +45,7 @@ export function ChatList({
   meId: string;
   now: number;
   loading: boolean;
+  note?: string | null;
   actions: ChatListActions;
 }) {
   const [query, setQuery] = useState("");
@@ -116,8 +118,9 @@ export function ChatList({
               <button
                 type="button"
                 onClick={actions.onAsk}
-                className="rounded-2xl bg-tp-primary-500 px-8 py-4 text-[17px] font-bold text-white"
+                className="flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-tp-primary-500 px-8 text-[18px] font-bold text-white shadow-sm active:bg-tp-primary-600"
               >
+                <MessageCircleQuestion className="size-6" />
                 我要發問
               </button>
             )}
@@ -133,17 +136,18 @@ export function ChatList({
           />
         ))}
       </ul>
+      {note && <p className="px-4 pb-5 text-center text-[12px] text-tp-gray-600">{note}</p>}
       </div>
 
       {/* 我要發問：浮在右下角，拇指最好按到的位置 */}
-      <button
+      {(questions.length > 0 || query.trim()) && <button
         type="button"
         onClick={actions.onAsk}
         className="absolute right-4 bottom-4 z-20 flex h-14 items-center gap-2 rounded-full bg-tp-primary-500 pr-6 pl-5 text-[18px] font-bold text-white shadow-lg ring-1 ring-black/5 active:bg-tp-primary-600"
       >
         <Plus className="size-6" strokeWidth={2.8} />
         我要發問
-      </button>
+      </button>}
     </div>
   );
 }

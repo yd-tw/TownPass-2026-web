@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import LineApp from "@/app/ui/line/line-app";
 
 export const metadata: Metadata = {
-  title: "我要發問",
-  description: "發問者用的 LINE 風格介面：只看得到自己的問題，可以打字、拍照或錄音發問",
+  title: "聊天",
+  description: "查看自己的問題與聊天室，並發出新問題",
 };
 
 export default function ChatPage() {

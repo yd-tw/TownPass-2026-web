@@ -1,4 +1,4 @@
-export type Tab = "home" | "chats" | "forum";
+export type Tab = "chats" | "forum";
 
 /** 聊天室輸入列要送出的內容 */
 export type Outgoing =
