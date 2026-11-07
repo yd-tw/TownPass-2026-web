@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type TouchEvent,
 } from "react";
 import { createMockApi, META } from "./api/mock-api";
 import { getCurrentLocation } from "./api/location";
@@ -25,8 +24,7 @@ import {
 } from "./api/types";
 import { ChatRoom, type PendingMedia } from "./chat-room";
 import { ChatList, type ChatListActions } from "./chat-list";
-import { BottomNav } from "./other-tabs";
-import type { Notify, Outgoing, Tab } from "./types";
+import type { Notify, Outgoing } from "./types";
 import { callApp, isInTownPass, postToApp, type ReportDraft } from "@/lib/townpass-bridge";
 
 const NICK_KEY = "line-demo-nickname";
@@ -38,8 +36,6 @@ const noopSubscribe = () => () => {};
  * 範例資料的時間是相對於「現在」產生的，而 Cache Components 會預先渲染
  * Client Component，所以整個 App 只在瀏覽器端掛載，伺服器端只輸出外框。
  */
-const TAB_TITLE: Record<Tab, string> = { chats: "我的問題", forum: "討論串" };
-
 /**
  * @param ask 一開啟就進入新問題聊天室（/new「我要發問」）
  */
@@ -322,10 +318,10 @@ function LineAppConnected({
   const [now, setNow] = useState(() => Date.now());
   const router = useRouter();
   const pathname = usePathname();
-  const tab: Tab = pathname === "/forum" ? "forum" : "chats";
+  const isForumPage = pathname === "/forum";
+  const isNewPage = pathname === "/new";
   const isRoomPage = pathname === "/room";
   const roomId = isRoomPage && typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("question") : null;
-  const isAppForumTab = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("appTab") === "forum";
   const [active, setActive] = useState<Active | null>(() => {
     // 問題回報：截圖已在 LineAppInner 讀好，聊天室第一次出現就帶著
     if (report) {
@@ -354,7 +350,6 @@ function LineAppConnected({
       );
     }
   }
-  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState<{
     text: string;
@@ -374,7 +369,7 @@ function LineAppConnected({
   );
 
   // 分頁與聊天室名稱顯示在網頁標題
-  const pageTitle = isRoomPage ? "討論串" : active ? (active.id === null ? "新問題" : "討論串") : TAB_TITLE[tab];
+  const pageTitle = isRoomPage ? "討論串" : active ? (active.id === null ? "新問題" : "討論串") : isForumPage ? "討論串" : "我的問題";
   useEffect(() => {
     const previous = document.title;
     document.title = pageTitle;
@@ -525,6 +520,14 @@ function LineAppConnected({
         .finally(() => { if (!cancelled) setLoading(false); });
       return () => { cancelled = true; };
     }
+    if (isNewPage) {
+      Promise.resolve()
+        .then(() => Promise.all([api.getMe(), api.getMeta()]))
+        .then(([m, metadata]) => { if (!cancelled) { setMe(m); setMeta(metadata); } })
+        .catch((e) => { if (!cancelled) notify(errorMessage(e), "error"); })
+        .finally(() => { if (!cancelled) setLoading(false); });
+      return () => { cancelled = true; };
+    }
     // 在 then 裡才開始載入：資料回來後才 setState，不是在 effect 本體同步呼叫
     Promise.resolve()
       .then(() => Promise.all([api.getMe(), api.getMeta(), loadAll(), loadForumQuestions()]))
@@ -542,13 +545,13 @@ function LineAppConnected({
     return () => {
       cancelled = true;
     };
-  }, [api, isRoomPage, roomId, loadAll, loadAnswers, loadQuestion, loadForumQuestions, notify]);
+  }, [api, isNewPage, isRoomPage, roomId, loadAll, loadAnswers, loadQuestion, loadForumQuestions, notify]);
 
   // 點推播通知會開啟 ?question={id}：首次載入完成後直接打開那則對話。
   // 問題可能不在自己的清單或論壇列表裡，所以另外抓一次詳情。
   const deepLinkHandled = useRef(false);
   useEffect(() => {
-    if (isRoomPage || loading || deepLinkHandled.current) return;
+    if (isNewPage || isRoomPage || loading || deepLinkHandled.current) return;
     deepLinkHandled.current = true;
     const url = new URL(window.location.href);
     const id = url.searchParams.get("question");
@@ -569,7 +572,7 @@ function LineAppConnected({
         return loadAnswers(id);
       })
       .catch((e) => notify(errorMessage(e), "error"));
-  }, [isRoomPage, loading, loadQuestion, loadAnswers, notify]);
+  }, [isNewPage, isRoomPage, loading, loadQuestion, loadAnswers, notify]);
 
   // 只訂閱自己的問題和正在看的問題（question:subscribe）
   const activeId = active?.id ?? null;
@@ -630,38 +633,35 @@ function LineAppConnected({
   );
 
   // ---- 動作 ----
+  function openPage(path: "/new" | "/room", questionId?: string) {
+    const url = new URL(path, window.location.origin);
+    if (questionId) url.searchParams.set("question", questionId);
+    url.searchParams.set("from", isForumPage ? "forum" : "chat");
+    if (isInTownPass()) postToApp("open_link", url.toString());
+    else router.push(`${url.pathname}${url.search}`);
+  }
+
   function openQuestion(id: string) {
+    if (!new URLSearchParams(window.location.search).get("demo")) {
+      openPage("/room", id);
+      return;
+    }
+    // 示範資料只存在目前的頁面記憶體，無法在新頁面讀取同一份資料。
     const detail = details[id] ?? forumQuestions.find((question) => question.id === id);
     setActive({ key: id, id, locationSharing: detail?.location_sharing === "off" ? "off" : "approximate" });
     Promise.all([loadQuestion(id), loadAnswers(id)]).catch((e) => notify(errorMessage(e), "error"));
   }
 
-  function openForumQuestion(id: string) {
-    // 示範資料只存在目前的頁面記憶體，新 WebView 無法讀取同一份資料。
-    if (isAppForumTab && isInTownPass() && !new URLSearchParams(window.location.search).get("demo")) {
-      const url = new URL("/room", window.location.origin);
-      url.searchParams.set("question", id);
-      postToApp("open_link", url.toString());
-      return;
-    }
-    openQuestion(id);
-  }
-
-  /** 新問題一律到 /new（App 的回報按鈕在 /new 會變成聊天按鈕） */
   function startDraft() {
-    const demo = new URLSearchParams(window.location.search).get("demo");
-    // 已經在 /new：直接在這頁開新問題
-    if (pathname === "/new") {
+    if (isNewPage) {
       setActive({ key: makeId(), id: null, locationSharing: "approximate" });
       return;
     }
-    // App 的論壇分頁：和討論串一樣另開一層 WebView，分頁本身維持在討論串列表
-    // （示範資料只存在目前的頁面記憶體，所以 demo 模式不另開）
-    if (isAppForumTab && isInTownPass() && !demo) {
-      postToApp("open_link", new URL("/new", window.location.origin).toString());
+    if (new URLSearchParams(window.location.search).get("demo")) {
+      setActive({ key: makeId(), id: null, locationSharing: "approximate" });
       return;
     }
-    router.push(demo ? `/new?demo=${encodeURIComponent(demo)}` : "/new");
+    openPage("/new");
   }
 
   async function send(out: Outgoing) {
@@ -707,9 +707,18 @@ function LineAppConnected({
         setDetails((prev) => ({ ...prev, [q.id]: q }));
         setAnswers((prev) => ({ ...prev, [q.id]: [] }));
         setActive((a) => (a ? { ...a, id: q.id, report: undefined } : a));
-        await loadSummaries();
-        await loadForumQuestions();
+        if (!isNewPage && !isRoomPage) {
+          await loadSummaries();
+          await loadForumQuestions();
+        }
         notify("問題已送出，有人回答時會通知您");
+        if (isNewPage) {
+          const roomUrl = new URL("/room", window.location.origin);
+          roomUrl.searchParams.set("question", q.id);
+          const from = new URLSearchParams(window.location.search).get("from");
+          if (from) roomUrl.searchParams.set("from", from);
+          router.replace(`${roomUrl.pathname}${roomUrl.search}`);
+        }
       } else {
         await api.createAnswer(active.id, {
           body,
@@ -718,7 +727,7 @@ function LineAppConnected({
           client_request_id: makeId(),
         });
         await loadAnswers(active.id);
-        await loadForumQuestions();
+        if (!isNewPage && !isRoomPage) await loadForumQuestions();
       }
       return true;
     } catch (e) {
@@ -795,44 +804,20 @@ function LineAppConnected({
 
   const meId = me?.id ?? "";
   const activeQuestion = active?.id ? details[active.id] ?? forumQuestions.find((q) => q.id === active.id) : null;
-  function closeRoom() {
+  function closeConversation() {
     if (isInTownPass()) postToApp("close_webview");
-    else router.replace("/forum");
-  }
-
-  function switchTab(next: Tab) {
-    if (next === tab && (pathname === "/chat" || pathname === "/forum")) return;
-    const params = new URLSearchParams(window.location.search);
-    const demo = params.get("demo");
-    const appTab = params.get("appTab");
-    const nextParams = new URLSearchParams();
-    if (demo) nextParams.set("demo", demo);
-    if (appTab === "forum") nextParams.set("appTab", appTab);
-    const nextPath = next === "forum" ? "/forum" : "/chat";
-    const query = nextParams.toString();
-    window.history.pushState(null, "", `${nextPath}${query ? `?${query}` : ""}`);
-  }
-
-  function endSwipe(event: TouchEvent<HTMLDivElement>) {
-    const start = touchStart.current;
-    touchStart.current = null;
-    if (!start || active) return;
-    const dx = event.changedTouches[0].clientX - start.x;
-    const dy = event.changedTouches[0].clientY - start.y;
-    if (Math.abs(dx) < 80 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
-    const order: Tab[] = ["chats", "forum"];
-    const next = order.indexOf(tab) + (dx < 0 ? 1 : -1);
-    if (next >= 0 && next < order.length) switchTab(order[next]);
+    else {
+      const from = new URLSearchParams(window.location.search).get("from");
+      router.replace(from === "forum" || (from !== "chat" && isRoomPage) ? "/forum" : "/chat");
+    }
   }
 
   return (
     <>
-      {!isRoomPage && <div
+      {!isRoomPage && !isNewPage && <div
         className="flex min-h-0 flex-1 flex-col"
-        onTouchStart={(event) => { touchStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY }; }}
-        onTouchEnd={endSwipe}
       >
-        {tab === "chats" ? (
+        {!isForumPage ? (
           <ChatList
             questions={questions}
             details={details}
@@ -864,15 +849,14 @@ function LineAppConnected({
             now={now}
             loading={loading || forumLoading}
             onAsk={startDraft}
-            onOpen={openForumQuestion}
+            onOpen={openQuestion}
           />
         )}
       </div>}
-      {!isRoomPage && !isAppForumTab && <BottomNav tab={tab} onChange={switchTab} />}
       {isRoomPage && !active && (
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
           {loading ? <Connecting /> : <p className="text-[15px] text-tp-gray-700">無法載入聊天室</p>}
-          {!loading && <button type="button" onClick={closeRoom} className="min-h-11 rounded-xl bg-tp-primary-500 px-6 text-white">返回</button>}
+          {!loading && <button type="button" onClick={closeConversation} className="min-h-11 rounded-xl bg-tp-primary-500 px-6 text-white">返回</button>}
         </div>
       )}
 
@@ -885,7 +869,7 @@ function LineAppConnected({
           now={now}
           limits={meta.limits}
           sending={sending}
-          onBack={() => { if (isRoomPage) closeRoom(); else { setActive(null); if (pathname === "/new") switchTab("chats"); } }}
+          onBack={() => { if (isRoomPage || isNewPage) closeConversation(); else setActive(null); }}
           onSend={send}
           locationSharing={active.locationSharing}
           onLocationSharingChange={(value) => setActive((current) => current ? { ...current, locationSharing: value } : current)}
