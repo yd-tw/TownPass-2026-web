@@ -752,12 +752,19 @@ function LineAppConnected({
 
   const meId = me?.id ?? "";
   const activeQuestion = active?.id ? details[active.id] ?? forumQuestions.find((q) => q.id === active.id) : null;
+  const isAppForumTab = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("appTab") === "forum";
 
   function switchTab(next: Tab) {
     if (next === tab && (pathname === "/chat" || pathname === "/forum")) return;
-    const demo = new URLSearchParams(window.location.search).get("demo");
+    const params = new URLSearchParams(window.location.search);
+    const demo = params.get("demo");
+    const appTab = params.get("appTab");
+    const nextParams = new URLSearchParams();
+    if (demo) nextParams.set("demo", demo);
+    if (appTab === "forum") nextParams.set("appTab", appTab);
     const nextPath = next === "forum" ? "/forum" : "/chat";
-    window.history.pushState(null, "", `${nextPath}${demo ? `?demo=${encodeURIComponent(demo)}` : ""}`);
+    const query = nextParams.toString();
+    window.history.pushState(null, "", `${nextPath}${query ? `?${query}` : ""}`);
   }
 
   function endSwipe(event: TouchEvent<HTMLDivElement>) {
@@ -815,7 +822,7 @@ function LineAppConnected({
           />
         )}
       </div>
-      <BottomNav tab={tab} onChange={switchTab} />
+      {!isAppForumTab && <BottomNav tab={tab} onChange={switchTab} />}
 
       {active && (active.id === null || activeQuestion) && (
         <ChatRoom
