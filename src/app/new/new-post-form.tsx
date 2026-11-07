@@ -35,9 +35,16 @@ export default function NewPostForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [doneId, setDoneId] = useState<string | null>(null);
+  // App 的標題列已顯示網頁 <title>，在 App 內就不再顯示頁面自己的標題
+  const [inApp, setInApp] = useState(false);
   const requested = useRef(false);
   // 一般發文的防重送 ID；問題回報用草稿 ID
   const fallbackRequestId = useRef<string | null>(null);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 只能在 client 判斷是否在 App 內
+    setInApp(isInTownPass());
+  }, []);
 
   useEffect(() => {
     // 草稿只能讀一次：Strict Mode 下 effect 會跑兩次，用 ref 防止第二次讀到 null
@@ -118,7 +125,7 @@ export default function NewPostForm() {
     }
   }
 
-  const header = (
+  const header = inApp ? null : (
     <header className="flex h-16 shrink-0 items-center px-4">
       <h1 className="text-[17px] leading-tight font-bold text-tp-gray-950">發表文章</h1>
     </header>
@@ -159,7 +166,7 @@ export default function NewPostForm() {
     <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
       {header}
 
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 pb-4">
+      <div className={cn("flex flex-1 flex-col gap-3 overflow-y-auto px-4 pb-4", inApp && "pt-4")}>
         {isAppReport && !draft && (
           <p className="rounded-2xl bg-tp-secondary-50 px-4 py-3 text-[15px] leading-snug text-tp-secondary-800 ring-1 ring-tp-secondary-200">
             沒有讀到回報草稿（可能已讀取過、超過 10 分鐘，或不在 App 內開啟），請手動填寫。
@@ -177,11 +184,11 @@ export default function NewPostForm() {
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          rows={6}
           placeholder="內容"
           maxLength={5000}
           required={!image && !audio}
-          className={cn(inputClass, "resize-none")}
+          // 填滿剩餘高度；有截圖時至少保留約 10 行
+          className={cn(inputClass, "min-h-64 flex-1 shrink-0 resize-none")}
         />
 
         {image && (
