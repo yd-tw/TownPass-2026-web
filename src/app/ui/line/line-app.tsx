@@ -322,6 +322,7 @@ function LineAppConnected({
   const [now, setNow] = useState(() => Date.now());
   const router = useRouter();
   const pathname = usePathname();
+  const router = useRouter();
   const tab: Tab = pathname === "/forum" ? "forum" : "chats";
   const isRoomPage = pathname === "/room";
   const roomId = isRoomPage && typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("question") : null;
@@ -647,8 +648,21 @@ function LineAppConnected({
     openQuestion(id);
   }
 
+  /** 新問題一律到 /new（App 的回報按鈕在 /new 會變成聊天按鈕） */
   function startDraft() {
-    setActive({ key: makeId(), id: null, locationSharing: "approximate" });
+    const demo = new URLSearchParams(window.location.search).get("demo");
+    // 已經在 /new：直接在這頁開新問題
+    if (pathname === "/new") {
+      setActive({ key: makeId(), id: null, locationSharing: "approximate" });
+      return;
+    }
+    // App 的論壇分頁：和討論串一樣另開一層 WebView，分頁本身維持在討論串列表
+    // （示範資料只存在目前的頁面記憶體，所以 demo 模式不另開）
+    if (isAppForumTab && isInTownPass() && !demo) {
+      postToApp("open_link", new URL("/new", window.location.origin).toString());
+      return;
+    }
+    router.push(demo ? `/new?demo=${encodeURIComponent(demo)}` : "/new");
   }
 
   async function send(out: Outgoing) {
