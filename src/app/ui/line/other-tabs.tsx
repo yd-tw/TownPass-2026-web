@@ -1,22 +1,25 @@
 "use client";
 
 import {
+  ChevronRight,
   House,
   MessageCircle,
   MessageCircleQuestion,
+  MessagesSquare,
   Pencil,
   type LucideIcon,
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { cn } from "@/lib/utils";
-import type { Me } from "./api/types";
-import { Avatar } from "./avatar";
+import type { Me, QuestionSummary } from "./api/types";
+import { Avatar, QuestionAvatar } from "./avatar";
+import { TabHeader } from "./tab-header";
 import type { Tab } from "./types";
 
 const NAV: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "home", label: "主頁", icon: House },
   { id: "chats", label: "聊天", icon: MessageCircle },
-  { id: "forum", label: "討論串", icon: MessageCircle },
+  { id: "forum", label: "討論串", icon: MessagesSquare },
 ];
 
 export function BottomNav({
@@ -40,14 +43,11 @@ export function BottomNav({
             aria-current={active ? "page" : undefined}
             className={cn(
               "relative flex min-h-14 flex-col items-center justify-center gap-0.5 text-[13px]",
-              active ? "font-bold text-stone-900" : "text-stone-500",
+              // 三個分頁的選中樣式一致：品牌色＋較粗的線，不填滿
+              active ? "font-bold text-claude-dark" : "text-stone-500",
             )}
           >
-            <Icon
-              className="size-7"
-              strokeWidth={active ? 2.4 : 1.8}
-              fill={active && id !== "home" ? "currentColor" : "none"}
-            />
+            <Icon className="size-7" strokeWidth={active ? 2.4 : 1.8} />
             {label}
             {id === "chats" && unread > 0 && (
               <span className="absolute top-0 left-1/2 ml-2 min-w-5.5 rounded-full bg-claude-dark px-1 text-center text-[12px] leading-5.5 font-bold text-white">
@@ -67,10 +67,15 @@ export function HomeTab({
   onNicknameChange,
   onAsk,
   onShowChats,
+  recent,
+  onOpen,
   note,
 }: {
   me: Me | null;
   stats: { total: number; waiting: number; resolved: number };
+  /** 最近的問題（最多 3 個），讓長輩在主頁就看到進度 */
+  recent: { q: QuestionSummary; unread: number; preview: string }[];
+  onOpen: (id: string) => void;
   onNicknameChange: (name: string) => Promise<boolean>;
   onAsk: () => void;
   onShowChats: () => void;
@@ -92,9 +97,7 @@ export function HomeTab({
 
   return (
     <div className="flex h-full flex-col bg-claude-ivory">
-      <header className="px-4 pt-4 pb-2">
-        <h1 className="text-[22px] font-bold tracking-tight">主頁</h1>
-      </header>
+      <TabHeader title="主頁" />
       <div className="flex-1 overflow-y-auto">
         <section className="flex items-center gap-4 px-4 py-4 max-[300px]:items-start max-[300px]:gap-2">
           <Avatar name={nickname} size={48} />
@@ -164,6 +167,46 @@ export function HomeTab({
             都可以打字、拍照或錄音問大家。
           </p>
         </section>
+
+        {recent.length > 0 && (
+          <section className="px-4 pb-6">
+            <div className="flex items-center justify-between pb-2">
+              <h2 className="text-[17px] font-bold text-claude-ink">最近的問題</h2>
+              <button
+                type="button"
+                onClick={onShowChats}
+                className="flex min-h-11 items-center gap-0.5 text-[15px] text-claude-dark"
+              >
+                全部
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
+            <ul className="overflow-hidden rounded-2xl border border-claude-sand bg-white">
+              {recent.map(({ q, unread, preview }) => (
+                <li key={q.id} className="not-last:border-b not-last:border-claude-sand">
+                  <button
+                    type="button"
+                    onClick={() => onOpen(q.id)}
+                    className="flex w-full items-center gap-3 px-3 py-3 text-left active:bg-claude-sand/40"
+                  >
+                    <QuestionAvatar q={q} size={44} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[16px] font-semibold text-claude-ink">
+                        {q.title ?? "（內容待確認）"}
+                      </p>
+                      <p className="truncate text-[14px] text-stone-600">{preview}</p>
+                    </div>
+                    {unread > 0 && (
+                      <span className="min-w-6 rounded-full bg-claude-dark px-1.5 text-center text-[13px] leading-6 font-bold text-white">
+                        {unread > 99 ? "99+" : unread}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {note && (
           <p className="px-4 pb-6 text-center text-[12px] text-stone-500">{note}</p>

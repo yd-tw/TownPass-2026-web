@@ -393,7 +393,7 @@ export function ChatRoom(props: ChatRoomProps) {
           <div className="min-w-0 flex-1">
             <h1 className="flex items-center gap-1 text-[17px] leading-tight font-bold text-stone-900">
               <span className="truncate">
-                {question ? "討論串" : "新問題"}
+                {question ? (question.title ?? "（內容待確認）") : "新問題"}
               </span>
               {members > 1 && <span className="shrink-0 font-normal">({members})</span>}
               {props.prefs?.muted && (
@@ -408,15 +408,6 @@ export function ChatRoom(props: ChatRoomProps) {
             </IconButton>
           )}
         </header>
-
-      {!question && draftOptionsOpen && (
-        <div className="mx-3 mb-2 rounded-2xl bg-white p-3 shadow-sm">
-          <label className="flex items-center justify-between gap-3 text-[15px] text-claude-ink">
-            <span><strong className="block">通知附近使用者</strong><span className="block text-[12px] text-stone-500">提供概略位置，讓附近的人看到問題</span></span>
-            <input type="checkbox" checked={props.locationSharing !== "off"} onChange={(event) => props.onLocationSharingChange(event.target.checked ? "approximate" : "off")} className="size-5 accent-claude" />
-          </label>
-        </div>
-      )}
 
       {banner && <p className={cn("flex shrink-0 items-center justify-center gap-1.5 px-3 py-2 text-center text-[15px] font-medium", banner.className)}>
         {question?.status === "resolved" && <CircleCheckBig className="size-4" />}{banner.text}
@@ -520,6 +511,15 @@ export function ChatRoom(props: ChatRoomProps) {
         />
       ) : (
         <div className="relative shrink-0 border-t border-claude-sand bg-claude-ivory px-1.5 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+          {/* 發問選項：浮在「…」上方，從下面滑出來 */}
+          {!question && draftOptionsOpen && (
+            <div className="absolute bottom-full left-2 z-10 mb-2 w-[min(20rem,calc(100%-1rem))] rounded-2xl bg-white p-3 shadow-xl ring-1 ring-claude-sand animate-in fade-in slide-in-from-bottom-4 duration-200">
+              <label className="flex items-center justify-between gap-3 text-[15px] text-claude-ink">
+                <span><strong className="block">通知附近使用者</strong><span className="block text-[12px] text-stone-500">提供概略位置，讓附近的人看到問題</span></span>
+                <input type="checkbox" checked={props.locationSharing !== "off"} onChange={(event) => props.onLocationSharingChange(event.target.checked ? "approximate" : "off")} className="size-5 accent-claude" />
+              </label>
+            </div>
+          )}
           {attachmentMenuOpen && (
             <div className="absolute bottom-full left-2 z-10 mb-2 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-claude-sand">
               {([
@@ -534,8 +534,8 @@ export function ChatRoom(props: ChatRoomProps) {
             </div>
           )}
           <div className="flex min-w-0 items-end gap-0.5">
-          {!question && <IconButton label="發問額外選項" onClick={() => setDraftOptionsOpen((open) => !open)} className="max-[300px]:size-10"><MoreHorizontal className="size-6" /></IconButton>}
-          <IconButton label="新增附件" disabled={sending} onClick={() => setAttachmentMenuOpen((open) => !open)} className="max-[300px]:size-10"><Plus className="size-7" /></IconButton>
+          {!question && <IconButton label="發問額外選項" onClick={() => { setAttachmentMenuOpen(false); setDraftOptionsOpen((open) => !open); }} className="max-[300px]:size-10"><MoreHorizontal className="size-6" /></IconButton>}
+          <IconButton label="新增附件" disabled={sending} onClick={() => { setDraftOptionsOpen(false); setAttachmentMenuOpen((open) => !open); }} className="max-[300px]:size-10"><Plus className="size-7" /></IconButton>
           <div className="mx-1 flex min-h-12 min-w-0 flex-1 items-end rounded-[24px] bg-claude-sand/70 px-4 max-[300px]:px-2">
             <textarea
               rows={1}

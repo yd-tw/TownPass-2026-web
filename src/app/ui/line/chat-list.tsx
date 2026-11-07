@@ -10,6 +10,7 @@ import { categoryLabel } from "./categories";
 import { answerPreview, formatListTime } from "./format";
 import { unreadCount, type QuestionPrefs } from "./types";
 import { useBackLayer } from "./use-back-layer";
+import { TabHeader } from "./tab-header";
 import { useLongPress } from "./use-long-press";
 
 /*
@@ -101,17 +102,7 @@ export function ChatList({
 
   return (
     <div className="relative flex h-full flex-col bg-claude-ivory">
-      <header className="flex items-center justify-between gap-2 px-4 pt-4 pb-2 max-[300px]:flex-col max-[300px]:items-stretch">
-        <h1 className="text-[22px] font-bold tracking-tight">聊天</h1>
-        <button
-          type="button"
-          onClick={actions.onAsk}
-          className="flex h-12 items-center justify-center gap-1.5 rounded-full bg-claude pr-5 pl-4 text-[15px] font-bold text-white shadow-sm active:bg-claude-dark"
-        >
-          <Plus className="size-5" strokeWidth={2.8} />
-          我要發問
-        </button>
-      </header>
+      <TabHeader title="聊天" />
 
       <div className="px-4 pb-3">
         <label className="flex h-11 items-center gap-2 rounded-xl bg-claude-sand/70 px-3.5 text-stone-500">
@@ -135,7 +126,7 @@ export function ChatList({
         </label>
       </div>
 
-      <ul className="flex-1 overflow-y-auto pb-2">
+      <ul className="flex-1 overflow-y-auto pb-24">
         {loading && (
           <li className="px-4 py-16 text-center text-[15px] text-stone-500">
             載入中…
@@ -168,6 +159,16 @@ export function ChatList({
           />
         ))}
       </ul>
+
+      {/* 我要發問：浮在右下角，拇指最好按到的位置 */}
+      <button
+        type="button"
+        onClick={actions.onAsk}
+        className="absolute right-4 bottom-4 z-20 flex h-14 items-center gap-2 rounded-full bg-claude pr-6 pl-5 text-[18px] font-bold text-white shadow-lg ring-1 ring-black/5 active:bg-claude-dark"
+      >
+        <Plus className="size-6" strokeWidth={2.8} />
+        我要發問
+      </button>
 
       {sheetRow && (
         <RowActionSheet

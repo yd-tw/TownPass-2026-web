@@ -4,6 +4,7 @@ import { MapPin, MessageCircle, Search, X } from "lucide-react";
 import { useState } from "react";
 import { Avatar } from "@/app/ui/line/avatar";
 import type { QuestionDetail } from "@/app/ui/line/api/types";
+import { TabHeader } from "@/app/ui/line/tab-header";
 
 function timeAgo(value: string, now: number) {
   const minutes = Math.max(1, Math.floor((now - Date.parse(value)) / 60_000));
@@ -41,18 +42,20 @@ export function ForumFeed({
 
   return (
     <div className="relative flex h-full flex-col bg-claude-ivory">
-      <header className="flex h-16 shrink-0 items-center justify-between px-4">
-        <h1 className="text-[22px] font-bold tracking-tight text-claude-ink">討論串</h1>
-        <button
-          type="button"
-          aria-label="搜尋討論串"
-          aria-expanded={searchOpen}
-          onClick={() => searchOpen ? closeSearch() : setSearchOpen(true)}
-          className="flex size-11 items-center justify-center rounded-full text-claude-ink hover:bg-claude-sand/60"
-        >
-          <Search className="size-6" />
-        </button>
-      </header>
+      <TabHeader
+        title="討論串"
+        action={
+          <button
+            type="button"
+            aria-label="搜尋討論串"
+            aria-expanded={searchOpen}
+            onClick={() => searchOpen ? closeSearch() : setSearchOpen(true)}
+            className="flex size-12 items-center justify-center rounded-full text-claude-ink hover:bg-claude-sand/60"
+          >
+            <Search className="size-6" />
+          </button>
+        }
+      />
 
       {searchOpen && (
         <div className="absolute top-14 right-4 left-4 z-10 flex h-12 items-center gap-2 rounded-xl border border-claude-sand bg-white px-3 shadow-lg">

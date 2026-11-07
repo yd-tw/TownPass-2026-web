@@ -23,6 +23,7 @@ import {
 } from "./api/types";
 import { ChatRoom } from "./chat-room";
 import { ChatList, type ChatListActions } from "./chat-list";
+import { answerPreview } from "./format";
 import { BottomNav, HomeTab } from "./other-tabs";
 import { unreadCount, type Notify, type Outgoing, type QuestionPrefs, type Tab } from "./types";
 
@@ -589,6 +590,20 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
             onNicknameChange={changeNickname}
             onAsk={startDraft}
             onShowChats={() => setTab("chats")}
+            recent={questions.slice(0, 3).map((q) => {
+              const last = answers[q.id]?.at(-1);
+              return {
+                q,
+                unread: unreadOf(q.id),
+                preview:
+                  q.status === "resolved"
+                    ? "已解決"
+                    : last
+                      ? answerPreview(last, meId)
+                      : "等待熱心的人回答",
+              };
+            })}
+            onOpen={openQuestion}
             note={note}
           />
         ) : tab === "chats" ? (
