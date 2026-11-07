@@ -21,8 +21,6 @@ export function ForumFeed({
   loading,
   onAsk,
   onOpen,
-  filter,
-  onFilterChange,
 }: {
   questions: QuestionDetail[];
   nickname: string;
@@ -30,9 +28,6 @@ export function ForumFeed({
   loading: boolean;
   onAsk: () => void;
   onOpen: (id: string) => void;
-  /** 全部，或只看等志工分類的問題（GET /questions?category=uncategorized） */
-  filter: "all" | "uncategorized";
-  onFilterChange: (filter: "all" | "uncategorized") => void;
 }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
@@ -42,7 +37,8 @@ export function ForumFeed({
 
   return (
     <div className="relative flex h-full flex-col bg-tp-gray-50">
-      <div className="px-4 pt-4 pb-2">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="px-4 pt-4 pb-3">
         <label className="flex h-11 items-center gap-2 rounded-xl bg-tp-gray-100/70 px-3.5 text-tp-gray-600">
           <Search className="size-5 shrink-0" />
           <input
@@ -66,31 +62,6 @@ export function ForumFeed({
         </label>
       </div>
 
-      <div className="flex gap-2 px-4 pb-2" role="group" aria-label="篩選討論串">
-        {(
-          [
-            ["all", "全部"],
-            ["uncategorized", "待分類"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={filter === id}
-            onClick={() => onFilterChange(id)}
-            className={cn(
-              "min-h-10 rounded-full border px-4 text-[15px] font-medium transition-colors",
-              filter === id
-                ? "border-tp-primary-500 bg-tp-primary-500 text-white"
-                : "border-tp-gray-100 text-tp-gray-800 hover:bg-tp-gray-100/40",
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex-1 overflow-y-auto">
         <button
           type="button"
           onClick={onAsk}
@@ -102,11 +73,7 @@ export function ForumFeed({
         {loading && <p className="py-12 text-center text-[15px] text-tp-gray-600">載入討論中…</p>}
         {!loading && visible.length === 0 && (
           <p className="py-12 text-center text-[15px] text-tp-gray-600">
-            {query
-              ? "找不到符合的討論"
-              : filter === "uncategorized"
-                ? "目前沒有待分類的問題，謝謝大家！"
-                : "目前沒有討論串"}
+            {query ? "找不到符合的討論" : "目前沒有討論串"}
           </p>
         )}
         {visible.map((question) => (
@@ -126,15 +93,15 @@ export function ForumFeed({
                   <time dateTime={question.created_at} className="whitespace-nowrap">{timeAgo(question.created_at, now)}</time>
                   <span
                     className={cn(
-                      "rounded-md px-1.5 py-1 font-semibold",
+                      "font-semibold",
                       question.category === "uncategorized"
-                        ? "bg-tp-secondary-100 text-tp-secondary-800"
-                        : "bg-tp-gray-100 text-tp-gray-800",
+                        ? "text-tp-secondary-800"
+                        : "text-tp-gray-800",
                     )}
                   >
-                    {categoryLabel(question.category)}
+                    #{categoryLabel(question.category)}
                   </span>
-                  {(question.tags ?? []).slice(0, 2).map((tag) => <span key={tag} className="rounded-md bg-tp-primary-50 px-1.5 py-1 font-semibold text-tp-primary-500">#{tag.replace(/^#/, "")}</span>)}
+                  {(question.tags ?? []).slice(0, 2).map((tag) => <span key={tag} className="font-semibold text-tp-primary-500">#{tag.replace(/^#/, "")}</span>)}
                 </span>
               </span>
             </span>

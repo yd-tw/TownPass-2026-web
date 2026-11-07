@@ -79,6 +79,7 @@ export function ChatList({
 
   return (
     <div className="relative flex h-full flex-col bg-tp-gray-50">
+      <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="px-4 pt-4 pb-3">
         <label className="flex h-11 items-center gap-2 rounded-xl bg-tp-gray-100/70 px-3.5 text-tp-gray-600">
           <Search className="size-5 shrink-0" />
@@ -101,7 +102,7 @@ export function ChatList({
         </label>
       </div>
 
-      <ul className="flex-1 overflow-y-auto pb-24">
+      <ul className="pb-24">
         {loading && (
           <li className="px-4 py-16 text-center text-[15px] text-tp-gray-600">
             載入中…
@@ -133,6 +134,7 @@ export function ChatList({
           />
         ))}
       </ul>
+      </div>
 
       {/* 我要發問：浮在右下角，拇指最好按到的位置 */}
       <button
@@ -183,7 +185,7 @@ function QuestionRow({
       <button
         type="button"
         onClick={onOpen}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-tp-gray-100/40 active:bg-tp-gray-100/60"
+        className="flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-tp-gray-100/40 active:bg-tp-gray-100/60"
       >
         <QuestionAvatar q={q} size={40} />
         <div className="min-w-0 flex-1">

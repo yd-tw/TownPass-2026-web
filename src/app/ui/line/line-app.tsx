@@ -190,9 +190,6 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
   const [me, setMe] = useState<Me | null>(null);
   const [questions, setQuestions] = useState<QuestionSummary[]>([]);
   const [forumQuestions, setForumQuestions] = useState<QuestionDetail[]>([]);
-  /** 討論串的篩選：全部，或只看等志工分類的 */
-  const [forumFilter, setForumFilter] = useState<"all" | "uncategorized">("all");
-  const forumFilterRef = useRef<"all" | "uncategorized">("all");
   const [details, setDetails] = useState<Record<string, QuestionDetail>>({});
   const [answers, setAnswers] = useState<Record<string, Answer[]>>({});
   const [loading, setLoading] = useState(true);
@@ -269,9 +266,7 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
   }, [api]);
 
   const loadForumQuestions = useCallback(async () => {
-    const list = await api.listForumQuestions(
-      forumFilterRef.current === "uncategorized" ? { category: "uncategorized" } : undefined,
-    );
+    const list = await api.listForumQuestions();
     setForumQuestions(list);
     return list;
   }, [api]);
@@ -474,12 +469,6 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
     }
   }
 
-  function changeForumFilter(filter: "all" | "uncategorized") {
-    forumFilterRef.current = filter;
-    setForumFilter(filter);
-    loadForumQuestions().catch((e) => notify(errorMessage(e), "error"));
-  }
-
   async function resolve(id: string) {
     try {
       await api.resolveQuestion(id);
@@ -581,8 +570,6 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
             loading={loading}
             onAsk={startDraft}
             onOpen={openQuestion}
-            filter={forumFilter}
-            onFilterChange={changeForumFilter}
           />
         )}
       </div>
