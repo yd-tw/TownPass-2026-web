@@ -3,7 +3,7 @@
 import { BellOff, Pin, Plus, Search, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import type { Answer, CategoryId, QuestionSummary } from "./api/types";
+import type { Answer, CategoryId, QuestionDetail, QuestionSummary } from "./api/types";
 import { META } from "./api/mock-api";
 import { QuestionAvatar } from "./avatar";
 import { categoryLabel } from "./categories";
@@ -28,6 +28,7 @@ export type ChatListActions = {
 
 type Row = {
   q: QuestionSummary;
+  body: string;
   prefs: QuestionPrefs;
   last: Answer | undefined;
   lastAt: string;
@@ -38,6 +39,7 @@ type Row = {
 
 export function ChatList({
   questions,
+  details,
   answers,
   prefs,
   meId,
@@ -46,6 +48,7 @@ export function ChatList({
   actions,
 }: {
   questions: QuestionSummary[];
+  details: Record<string, QuestionDetail>;
   answers: Record<string, Answer[]>;
   prefs: Record<string, QuestionPrefs>;
   meId: string;
@@ -69,6 +72,7 @@ export function ChatList({
         const last = list.at(-1);
         return {
           q: question,
+          body: details[question.id]?.body ?? (question.has_audio ? "（語音提問）" : "（附件提問）"),
           prefs: p,
           last,
           lastAt: last?.created_at ?? question.created_at,
@@ -81,7 +85,7 @@ export function ChatList({
       })
       .filter((r) => {
         if (!q) return true;
-        if ((r.q.title ?? "").toLowerCase().includes(q)) return true;
+        if (r.body.toLowerCase().includes(q)) return true;
         if (categoryLabel(r.q.category).includes(q)) return true;
         return (answers[r.q.id] ?? []).some((a) =>
           (a.body ?? "").toLowerCase().includes(q),
@@ -91,18 +95,18 @@ export function ChatList({
         if (a.prefs.pinned !== b.prefs.pinned) return a.prefs.pinned ? -1 : 1;
         return b.lastAt.localeCompare(a.lastAt);
       });
-  }, [questions, answers, prefs, meId, query]);
+  }, [questions, details, answers, prefs, meId, query]);
 
   const sheetRow = rows.find((r) => r.q.id === sheetId);
 
   return (
     <div className="relative flex h-full flex-col bg-claude-ivory">
-      <header className="flex items-center justify-between px-4 pt-4 pb-2">
-        <h1 className="text-[24px] font-bold tracking-tight">聊天</h1>
+      <header className="flex items-center justify-between gap-2 px-4 pt-4 pb-2 max-[300px]:flex-col max-[300px]:items-stretch">
+        <h1 className="text-[22px] font-bold tracking-tight">聊天</h1>
         <button
           type="button"
           onClick={actions.onAsk}
-          className="flex h-12 items-center gap-1.5 rounded-full bg-claude pr-5 pl-4 text-[17px] font-bold text-white shadow-sm active:bg-claude-dark"
+          className="flex h-12 items-center justify-center gap-1.5 rounded-full bg-claude pr-5 pl-4 text-[15px] font-bold text-white shadow-sm active:bg-claude-dark"
         >
           <Plus className="size-5" strokeWidth={2.8} />
           我要發問
@@ -116,7 +120,7 @@ export function ChatList({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜尋我的問題"
-            className="min-w-0 flex-1 bg-transparent text-[17px] text-stone-900 outline-none placeholder:text-stone-500"
+            className="min-w-0 flex-1 bg-transparent text-[15px] text-stone-900 outline-none placeholder:text-stone-500"
           />
           {query && (
             <button
@@ -133,20 +137,20 @@ export function ChatList({
 
       <ul className="flex-1 overflow-y-auto pb-2">
         {loading && (
-          <li className="px-4 py-16 text-center text-[17px] text-stone-500">
+          <li className="px-4 py-16 text-center text-[15px] text-stone-500">
             載入中…
           </li>
         )}
         {!loading && rows.length === 0 && (
           <li className="flex flex-col items-center gap-4 px-6 py-16 text-center">
-            <p className="text-[17px] text-stone-500">
+            <p className="text-[15px] text-stone-500">
               {query ? "找不到符合的問題" : "還沒有問過問題"}
             </p>
             {!query && (
               <button
                 type="button"
                 onClick={actions.onAsk}
-                className="rounded-2xl bg-claude px-8 py-4 text-lg font-bold text-white"
+                className="rounded-2xl bg-claude px-8 py-4 text-[17px] font-bold text-white"
               >
                 我要發問
               </button>
@@ -179,14 +183,14 @@ export function ChatList({
 function StatusChip({ q }: { q: QuestionSummary }) {
   if (q.status === "resolved") {
     return (
-      <span className="shrink-0 rounded-md bg-claude-green/15 px-1.5 text-[13px] leading-5 font-medium text-claude-green">
+      <span className="shrink-0 rounded-md bg-claude-green/15 px-1.5 text-[12px] leading-5 font-medium text-claude-green">
         已解決
       </span>
     );
   }
   if (q.status === "in_progress") {
     return (
-      <span className="shrink-0 rounded-md bg-claude-blue/15 px-1.5 text-[13px] leading-5 font-medium text-claude-blue">
+      <span className="shrink-0 rounded-md bg-claude-blue/15 px-1.5 text-[12px] leading-5 font-medium text-claude-blue">
         協助中
       </span>
     );
@@ -218,14 +222,14 @@ function QuestionRow({
         {...press}
         className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors select-none [-webkit-touch-callout:none] hover:bg-claude-sand/40 active:bg-claude-sand/60"
       >
-        <QuestionAvatar q={q} />
+        <QuestionAvatar q={q} size={40} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
-            <span className="truncate text-[17px] font-semibold text-stone-900">
-              {q.title ?? "（內容待確認）"}
+            <span className="truncate text-[15px] font-semibold text-stone-900">
+              {row.body}
             </span>
             {row.members > 1 && (
-              <span className="shrink-0 text-[17px] text-stone-500">
+              <span className="shrink-0 text-[15px] text-stone-500">
                 ({row.members})
               </span>
             )}
@@ -240,8 +244,8 @@ function QuestionRow({
             </p>
           </div>
         </div>
-        <div className="flex min-h-12 shrink-0 flex-col items-end justify-between self-stretch py-0.5">
-          <span className="text-[13px] text-stone-500">
+        <div className="flex min-h-12 shrink-0 flex-col items-end justify-between self-stretch py-0.5 max-[300px]:min-h-0">
+          <span className="text-[12px] text-stone-500 max-[300px]:hidden">
             {formatListTime(Date.parse(row.lastAt), now)}
           </span>
           <div className="flex items-center gap-1">
@@ -251,7 +255,7 @@ function QuestionRow({
             {unread > 0 && (
               <span
                 className={cn(
-                  "min-w-6 rounded-full px-1.5 text-center text-[13px] leading-6 font-bold text-white",
+                  "min-w-6 rounded-full px-1.5 text-center text-[12px] leading-6 font-bold text-white",
                   prefs.muted ? "bg-stone-400" : "bg-claude-dark",
                 )}
                 aria-label={`${unread} 則新回答`}
@@ -292,7 +296,7 @@ function RowActionSheet({
   return (
     <Sheet onClose={onClose}>
       <p className="truncate px-4 pt-4 pb-2 text-center text-[15px] font-semibold text-stone-500">
-        {row.q.title ?? "（內容待確認）"}
+        {row.body}
       </p>
       <ul className="divide-y divide-claude-sand/70">
         {items.map((item) => (
@@ -303,7 +307,7 @@ function RowActionSheet({
                 item.run();
                 onClose();
               }}
-              className="w-full px-4 py-4 text-[17px] text-stone-900 hover:bg-claude-sand/40"
+              className="w-full px-4 py-4 text-[15px] text-stone-900 hover:bg-claude-sand/40"
             >
               {item.label}
             </button>
@@ -314,7 +318,7 @@ function RowActionSheet({
       <button
         type="button"
         onClick={onClose}
-        className="w-full px-4 py-4 text-[17px] text-stone-600 hover:bg-claude-sand/40"
+        className="w-full px-4 py-4 text-[15px] text-stone-600 hover:bg-claude-sand/40"
       >
         取消
       </button>
@@ -337,8 +341,8 @@ export function AskSheet({
   return (
     <Sheet onClose={onClose}>
       <div className="px-5 pt-6 pb-4">
-        <h2 className="text-center text-[22px] font-bold">我要發問</h2>
-        <p className="mt-1.5 text-center text-[17px] leading-relaxed text-stone-600">
+        <h2 className="text-center text-[20px] font-bold">我要發問</h2>
+        <p className="mt-1.5 text-center text-[15px] leading-relaxed text-stone-600">
           按下「發問」後，
           <br />
           可以打字、拍照或錄音說明您的問題
@@ -360,14 +364,14 @@ export function AskSheet({
         <button
           type="button"
           onClick={() => onAsk(category)}
-          className="mt-4 w-full rounded-2xl bg-claude py-4 text-[22px] font-bold text-white shadow-sm active:bg-claude-dark"
+          className="mt-4 w-full rounded-2xl bg-claude py-4 text-[20px] font-bold text-white shadow-sm active:bg-claude-dark"
         >
           發問
         </button>
         <button
           type="button"
           onClick={onClose}
-          className="mt-2 w-full py-3 text-[17px] text-stone-600"
+          className="mt-2 w-full py-3 text-[15px] text-stone-600"
         >
           取消
         </button>

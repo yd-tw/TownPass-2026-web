@@ -6,8 +6,10 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type TouchEvent,
 } from "react";
 import { createMockApi } from "./api/mock-api";
+import { ForumFeed } from "@/app/ui/forum/forum-feed";
 import {
   ApiError,
   type Answer,
@@ -16,8 +18,8 @@ import {
   type QuestionDetail,
   type QuestionSummary,
 } from "./api/types";
-import { AskSheet, ChatList, type ChatListActions } from "./chat-list";
 import { ChatRoom } from "./chat-room";
+import { ChatList, type ChatListActions } from "./chat-list";
 import { BottomNav, HomeTab } from "./other-tabs";
 import { unreadCount, type Notify, type Outgoing, type QuestionPrefs, type Tab } from "./types";
 
@@ -97,22 +99,12 @@ const newPrefs = (lastSeenAt: string): QuestionPrefs => ({
   lastSeenAt,
 });
 
-/** 沒打字、只傳照片或語音的問題，標題帶上日期時間才分得出來 */
-function mediaTitle(kind: "images" | "audio") {
-  const d = new Date();
-  const clock = new Intl.DateTimeFormat("zh-TW", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(d);
-  return `${d.getMonth() + 1}/${d.getDate()} ${clock} 的${kind === "audio" ? "語音" : "照片"}提問`;
-}
-
 /** key 在新問題送出後保持不變，聊天室才不會重新播放進場動畫 */
 type Active = {
   key: string;
   id: string | null;
   category: CategoryId;
+  locationSharing: "off" | "approximate";
   marker: string | null;
 };
 
@@ -125,14 +117,19 @@ function LineAppInner() {
   );
   const [me, setMe] = useState<Me | null>(null);
   const [questions, setQuestions] = useState<QuestionSummary[]>([]);
+  const [forumQuestions, setForumQuestions] = useState<QuestionDetail[]>([]);
   const [details, setDetails] = useState<Record<string, QuestionDetail>>({});
   const [answers, setAnswers] = useState<Record<string, Answer[]>>({});
   const [prefs, setPrefs] = useState<Record<string, QuestionPrefs>>({});
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(() => Date.now());
-  const [tab, setTab] = useState<Tab>("chats");
-  const [active, setActive] = useState<Active | null>(null);
-  const [picking, setPicking] = useState(false);
+  const [tab, setTab] = useState<Tab>("home");
+  const [active, setActive] = useState<Active | null>(() =>
+    new URLSearchParams(window.location.search).get("mode") === "ask"
+      ? { key: makeId(), id: null, category: "uncategorized", locationSharing: "approximate", marker: null }
+      : null,
+  );
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState<{
     text: string;
@@ -188,6 +185,12 @@ function LineAppInner() {
     return list;
   }, [api]);
 
+  const loadForumQuestions = useCallback(async () => {
+    const list = await api.listForumQuestions();
+    setForumQuestions(list);
+    return list;
+  }, [api]);
+
   const loadAll = useCallback(async () => {
     const list = await loadSummaries();
     const rows = await Promise.all(
@@ -233,7 +236,7 @@ function LineAppInner() {
     let cancelled = false;
     // 在 then 裡才開始載入：資料回來後才 setState，不是在 effect 本體同步呼叫
     Promise.resolve()
-      .then(() => Promise.all([api.getMe(), loadAll()]))
+      .then(() => Promise.all([api.getMe(), loadAll(), loadForumQuestions()]))
       .then(([m]) => {
         if (!cancelled) setMe(m);
       })
@@ -246,7 +249,7 @@ function LineAppInner() {
     return () => {
       cancelled = true;
     };
-  }, [api, loadAll, notify]);
+  }, [api, loadAll, loadForumQuestions, notify]);
 
   // ---- 即時訊號：收到後用 REST 重抓（同 api-spec.md 的做法） ----
   useEffect(
@@ -254,15 +257,15 @@ function LineAppInner() {
       api.subscribe(async (signal) => {
         try {
           if (signal.type === "feed.changed") {
-            await loadAll();
+            await Promise.all([loadAll(), loadForumQuestions()]);
             return;
           }
           const id = signal.question_id;
           if (signal.type === "question.changed") {
-            await Promise.all([loadQuestion(id), loadSummaries()]);
+            await Promise.all([loadQuestion(id), loadSummaries(), loadForumQuestions()]);
             return;
           }
-          const [list] = await Promise.all([loadAnswers(id), loadSummaries()]);
+          const [list] = await Promise.all([loadAnswers(id), loadSummaries(), loadForumQuestions()]);
           const { me: currentMe, prefs: currentPrefs, activeId } = latest.current;
           if (activeId === id) {
             markSeen(id);
@@ -282,12 +285,12 @@ function LineAppInner() {
           // 問題已被撤回（404）等情況：下次載入列表時會修正
         }
       }),
-    [api, loadAll, loadAnswers, loadQuestion, loadSummaries, markSeen, notify],
+    [api, loadAll, loadAnswers, loadQuestion, loadSummaries, loadForumQuestions, markSeen, notify],
   );
 
   // ---- 動作 ----
   function openQuestion(id: string) {
-    const detail = details[id];
+    const detail = details[id] ?? forumQuestions.find((question) => question.id === id);
     const summary = questions.find((q) => q.id === id);
     const category = detail?.category ?? summary?.category;
     if (!category) return;
@@ -295,15 +298,13 @@ function LineAppInner() {
     const firstUnread = (answers[id] ?? []).find(
       (a) => a.author.id !== me?.id && p && a.created_at > p.lastSeenAt,
     );
-    setActive({ key: id, id, category, marker: firstUnread?.id ?? null });
+    setActive({ key: id, id, category, locationSharing: detail?.location_sharing === "off" ? "off" : "approximate", marker: firstUnread?.id ?? null });
     markSeen(id);
-    loadQuestion(id).catch((e) => notify(errorMessage(e), "error"));
+    Promise.all([loadQuestion(id), loadAnswers(id)]).catch((e) => notify(errorMessage(e), "error"));
   }
 
-  function startDraft(category: CategoryId) {
-    setPicking(false);
-    setTab("chats");
-    setActive({ key: makeId(), id: null, category, marker: null });
+  function startDraft() {
+    setActive({ key: makeId(), id: null, category: "uncategorized", locationSharing: "approximate", marker: null });
   }
 
   async function send(out: Outgoing) {
@@ -319,19 +320,20 @@ function LineAppInner() {
         for (const file of out.files) {
           mediaIds.push((await api.uploadMedia(file, "image")).id);
         }
+      } else if (out.kind === "video") {
+        mediaIds.push((await api.uploadMedia(out.file, "video")).id);
       } else {
         mediaIds.push((await api.uploadMedia(out.blob, "audio", out.duration)).id);
       }
 
       if (active.id === null) {
         const q = await api.createQuestion({
-          title: body ? undefined : mediaTitle(out.kind === "audio" ? "audio" : "images"),
           body,
           media_ids: mediaIds,
           language: "zh-TW",
           category: active.category,
           assistance_mode: "online",
-          location_sharing: "off",
+          location_sharing: active.locationSharing,
           client_request_id: makeId(),
         });
         setDetails((prev) => ({ ...prev, [q.id]: q }));
@@ -339,6 +341,7 @@ function LineAppInner() {
         setPrefs((prev) => ({ ...prev, [q.id]: newPrefs(q.created_at) }));
         setActive((a) => (a ? { ...a, id: q.id } : a));
         await loadSummaries();
+        await loadForumQuestions();
         notify("問題已送出，有人回答時會通知您");
       } else {
         await api.createAnswer(active.id, {
@@ -348,6 +351,7 @@ function LineAppInner() {
           client_request_id: makeId(),
         });
         await loadAnswers(active.id);
+        await loadForumQuestions();
         markSeen(active.id);
       }
       return true;
@@ -366,6 +370,7 @@ function LineAppInner() {
         loadQuestion(a.question_id),
         loadAnswers(a.question_id),
         loadSummaries(),
+        loadForumQuestions(),
       ]);
       notify("太好了！問題已標示為解決");
     } catch (e) {
@@ -387,6 +392,7 @@ function LineAppInner() {
       await api.deleteQuestion(id);
       setActive(null);
       setQuestions((prev) => prev.filter((q) => q.id !== id));
+      await loadForumQuestions();
       notify("已撤回問題");
     } catch (e) {
       notify(errorMessage(e), "error");
@@ -402,6 +408,7 @@ function LineAppInner() {
         // 忽略：只是記住暱稱的便利功能
       }
       await loadAll();
+      await loadForumQuestions();
       return true;
     } catch (e) {
       notify(errorMessage(e), "error");
@@ -417,7 +424,7 @@ function LineAppInner() {
 
   const listActions: ChatListActions = {
     onOpen: openQuestion,
-    onAsk: () => setPicking(true),
+    onAsk: startDraft,
     onTogglePin: (id) => updatePrefs(id, (p) => ({ pinned: !p.pinned })),
     onToggleMute: (id) => updatePrefs(id, (p) => ({ muted: !p.muted })),
     onMarkRead: markSeen,
@@ -427,22 +434,28 @@ function LineAppInner() {
   const unreadOf = (id: string) => unreadCount(answers[id], meId, prefs[id]?.lastSeenAt);
   const totalUnread = questions.reduce((sum, q) => sum + unreadOf(q.id), 0);
   const resolved = questions.filter((q) => q.status === "resolved").length;
-  const activeQuestion = active?.id ? details[active.id] : null;
+  const activeQuestion = active?.id ? details[active.id] ?? forumQuestions.find((q) => q.id === active.id) : null;
+
+  function endSwipe(event: TouchEvent<HTMLDivElement>) {
+    const start = touchStart.current;
+    touchStart.current = null;
+    if (!start || active) return;
+    const dx = event.changedTouches[0].clientX - start.x;
+    const dy = event.changedTouches[0].clientY - start.y;
+    if (Math.abs(dx) < 80 || Math.abs(dx) < Math.abs(dy) * 1.3) return;
+    const order: Tab[] = ["home", "chats", "forum"];
+    const next = order.indexOf(tab) + (dx < 0 ? 1 : -1);
+    if (next >= 0 && next < order.length) setTab(order[next]);
+  }
 
   return (
     <>
-      <div className="flex min-h-0 flex-1 flex-col">
-        {tab === "chats" ? (
-          <ChatList
-            questions={questions}
-            answers={answers}
-            prefs={prefs}
-            meId={meId}
-            now={now}
-            loading={loading}
-            actions={listActions}
-          />
-        ) : (
+      <div
+        className="flex min-h-0 flex-1 flex-col"
+        onTouchStart={(event) => { touchStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY }; }}
+        onTouchEnd={endSwipe}
+      >
+        {tab === "home" ? (
           <HomeTab
             me={me}
             stats={{
@@ -451,16 +464,33 @@ function LineAppInner() {
               resolved,
             }}
             onNicknameChange={changeNickname}
-            onAsk={() => setPicking(true)}
+            onAsk={startDraft}
             onShowChats={() => setTab("chats")}
+          />
+        ) : tab === "chats" ? (
+          <ChatList
+            questions={questions}
+            details={details}
+            answers={answers}
+            prefs={prefs}
+            meId={meId}
+            now={now}
+            loading={loading}
+            actions={listActions}
+          />
+        ) : (
+          <ForumFeed
+            questions={forumQuestions}
+            nickname={me?.nickname ?? "訪客"}
+            meId={meId}
+            now={now}
+            loading={loading}
+            onAsk={startDraft}
+            onOpen={openQuestion}
           />
         )}
       </div>
       <BottomNav tab={tab} unread={totalUnread} onChange={setTab} />
-
-      {picking && (
-        <AskSheet onAsk={startDraft} onClose={() => setPicking(false)} />
-      )}
 
       {active && (active.id === null || activeQuestion) && (
         <ChatRoom
@@ -476,6 +506,8 @@ function LineAppInner() {
           unreadMarkerKey={active.marker}
           onBack={() => setActive(null)}
           onSend={send}
+          locationSharing={active.locationSharing}
+          onLocationSharingChange={(value) => setActive((current) => current ? { ...current, locationSharing: value } : current)}
           onAccept={accept}
           onDeleteAnswer={deleteAnswer}
           onWithdraw={() => (active.id ? withdraw(active.id) : Promise.resolve())}
@@ -497,11 +529,11 @@ function LineAppInner() {
             role="alert"
           >
             <div className="flex w-full max-w-sm items-center gap-3 rounded-2xl bg-claude-ink px-4 py-3 text-white shadow-xl animate-in fade-in zoom-in-95">
-              <p className="flex-1 text-[17px] leading-snug">{toast.text}</p>
+              <p className="flex-1 text-[15px] leading-snug">{toast.text}</p>
               <button
                 type="button"
                 onClick={() => setToast(null)}
-                className="h-11 shrink-0 rounded-xl bg-white px-4 text-[16px] font-bold text-claude-ink"
+                className="h-11 shrink-0 rounded-xl bg-white px-4 text-[15px] font-bold text-claude-ink"
               >
                 知道了
               </button>
@@ -513,7 +545,7 @@ function LineAppInner() {
             className="pointer-events-none absolute inset-x-0 bottom-24 z-60 flex justify-center px-6"
             role="status"
           >
-            <span className="rounded-2xl bg-claude-ink/90 px-5 py-3 text-center text-[16px] text-white animate-in fade-in zoom-in-95">
+            <span className="rounded-2xl bg-claude-ink/90 px-5 py-3 text-center text-[15px] text-white animate-in fade-in zoom-in-95">
               {toast.text}
             </span>
           </div>

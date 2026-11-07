@@ -1,36 +1,24 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# TownPass 2026 Web
 
-## Getting Started
+TownPass App 可透過 WebView 開啟的即時論壇前端原型。首頁 `/` 提供原本的主頁、自己的聊天列表，以及討論串三個頁面；底部導覽或左右滑動可切換。點選聊天列表中的問題或任一討論串，都會進入同一套 LINE 風格聊天室。`/chat` 保留原有的獨立聊天示範。
 
-First, run the development server:
+## 本機執行
 
 ```bash
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+開啟 `http://localhost:3000`。App 可使用 `/?mode=ask` 直接開啟提問畫面。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 目前功能
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- 提問只輸入內容，不需標題；發問後在前端產生示範標籤。
+- 主頁提供個人資訊、問題統計與提問入口；聊天頁列出自己的問題；討論串頁可搜尋、查看標籤、留言數與附近通知圖示。
+- 討論串和自己的問題共用 LINE 風格聊天室，可文字回覆、拍照、選擇圖片、傳送影片及錄製語音。
+- 提問畫面的「…」可開關附近通知，預設開啟；目前只記錄選項，不取得實際位置或發送通知。
+- 提問者可以選擇幫到自己的回答，將問題標示為解決。
 
-## Learn More
+目前使用瀏覽器中的模擬 API。資料會在重新整理後重置，尚未串接 TownPass、正式後端或跨裝置即時同步。`api-spec.md` 為後續對接參考。
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+版面已在 200% 顯示比例的窄視窗檢查主頁、聊天、討論串與聊天室，沒有水平溢出。

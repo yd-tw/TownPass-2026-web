@@ -16,6 +16,7 @@ import type { Tab } from "./types";
 const NAV: { id: Tab; label: string; icon: LucideIcon }[] = [
   { id: "home", label: "主頁", icon: House },
   { id: "chats", label: "聊天", icon: MessageCircle },
+  { id: "forum", label: "討論串", icon: MessageCircle },
 ];
 
 export function BottomNav({
@@ -28,7 +29,7 @@ export function BottomNav({
   onChange: (tab: Tab) => void;
 }) {
   return (
-    <nav className="grid shrink-0 grid-cols-2 border-t border-claude-sand bg-claude-ivory pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
+    <nav className="grid shrink-0 grid-cols-3 border-t border-claude-sand bg-claude-ivory pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
       {NAV.map(({ id, label, icon: Icon }) => {
         const active = tab === id;
         return (
@@ -38,14 +39,14 @@ export function BottomNav({
             onClick={() => onChange(id)}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "relative flex min-h-14 flex-col items-center justify-center gap-0.5 text-[14px]",
+              "relative flex min-h-14 flex-col items-center justify-center gap-0.5 text-[13px]",
               active ? "font-bold text-stone-900" : "text-stone-500",
             )}
           >
             <Icon
               className="size-7"
               strokeWidth={active ? 2.4 : 1.8}
-              fill={active && id === "chats" ? "currentColor" : "none"}
+              fill={active && id !== "home" ? "currentColor" : "none"}
             />
             {label}
             {id === "chats" && unread > 0 && (
@@ -89,11 +90,11 @@ export function HomeTab({
   return (
     <div className="flex h-full flex-col bg-claude-ivory">
       <header className="px-4 pt-4 pb-2">
-        <h1 className="text-[24px] font-bold tracking-tight">主頁</h1>
+        <h1 className="text-[22px] font-bold tracking-tight">主頁</h1>
       </header>
       <div className="flex-1 overflow-y-auto">
-        <section className="flex items-center gap-4 px-4 py-4">
-          <Avatar name={nickname} size={64} />
+        <section className="flex items-center gap-4 px-4 py-4 max-[300px]:items-start max-[300px]:gap-2">
+          <Avatar name={nickname} size={48} />
           <div className="min-w-0 flex-1">
             {editing ? (
               <form onSubmit={save} className="flex gap-2">
@@ -103,7 +104,7 @@ export function HomeTab({
                   maxLength={30}
                   onChange={(e) => setDraft(e.target.value)}
                   onBlur={save}
-                  className="h-11 min-w-0 flex-1 rounded-lg border border-claude-sand px-3 text-[18px] outline-none focus:border-claude"
+                  className="h-11 min-w-0 flex-1 rounded-lg border border-claude-sand px-3 text-[17px] outline-none focus:border-claude"
                 />
               </form>
             ) : (
@@ -113,19 +114,19 @@ export function HomeTab({
                   setDraft(nickname);
                   setEditing(true);
                 }}
-                className="flex min-h-11 max-w-full items-center gap-1.5 text-[20px] font-bold"
+                className="flex min-h-11 max-w-full items-center gap-1.5 text-[18px] font-bold"
               >
                 <span className="truncate">{nickname}</span>
                 <Pencil className="size-5 shrink-0 text-stone-500" />
               </button>
             )}
-            <p className="mt-0.5 text-[14px] text-stone-600">
+            <p className="mt-0.5 text-[13px] text-stone-600">
               回答您的人會看到這個暱稱，點名字可以修改
             </p>
           </div>
         </section>
 
-        <section className="mx-4 grid grid-cols-3 overflow-hidden rounded-2xl border border-claude-sand bg-white">
+        <section className="mx-4 grid grid-cols-3 overflow-hidden rounded-2xl border border-claude-sand bg-white max-[300px]:grid-cols-1">
           {(
             [
               ["我的問題", stats.total],
@@ -137,9 +138,9 @@ export function HomeTab({
               key={label}
               type="button"
               onClick={onShowChats}
-              className="flex flex-col items-center gap-0.5 py-4 not-last:border-r not-last:border-claude-sand"
+              className="flex flex-col items-center gap-0.5 py-4 not-last:border-r not-last:border-claude-sand max-[300px]:flex-row max-[300px]:justify-between max-[300px]:px-4 max-[300px]:not-last:border-r-0 max-[300px]:not-last:border-b"
             >
-              <span className="text-[28px] font-bold text-claude-ink">{value}</span>
+              <span className="text-[24px] font-bold text-claude-ink">{value}</span>
               <span className="text-[15px] text-stone-600">{label}</span>
             </button>
           ))}
@@ -149,19 +150,19 @@ export function HomeTab({
           <button
             type="button"
             onClick={onAsk}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-claude py-5 text-[22px] font-bold text-white shadow-sm active:bg-claude-dark"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-claude py-5 text-[20px] font-bold text-white shadow-sm active:bg-claude-dark"
           >
             <MessageCircleQuestion className="size-7" />
             我要發問
           </button>
-          <p className="mt-3 text-center text-[16px] leading-relaxed text-stone-600">
+          <p className="mt-3 text-center text-[15px] leading-relaxed text-stone-600">
             看不懂的公文、不確定是不是詐騙、不知道怎麼走，
             <br />
             都可以打字、拍照或錄音問大家。
           </p>
         </section>
 
-        <p className="px-4 pb-6 text-center text-[13px] text-stone-500">
+        <p className="px-4 pb-6 text-center text-[12px] text-stone-500">
           示範模式：資料只存在這個分頁，重新整理就會重置
         </p>
       </div>

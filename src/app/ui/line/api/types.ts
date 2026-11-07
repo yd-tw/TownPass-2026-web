@@ -34,7 +34,7 @@ export type Me = PublicUser & {
 
 export type Media = {
   id: string;
-  kind: "image" | "audio";
+  kind: "image" | "audio" | "video";
   url: string;
   width?: number;
   height?: number;
@@ -53,6 +53,8 @@ export type QuestionSummary = {
   status: QuestionStatus;
   /** 內容待個資確認時為 null */
   title: string | null;
+  /** 前端論壇展示用的標籤；正式 API 對接時由後端提供 */
+  tags?: string[];
   category: CategoryId;
   language: string;
   assistance_mode: AssistanceMode;
@@ -123,6 +125,7 @@ export type Meta = {
     image_max_bytes: number;
     audio_max_bytes: number;
     audio_max_seconds: number;
+    video_max_bytes: number;
   };
 };
 
@@ -139,6 +142,8 @@ export type AskerApi = {
   updateMe(patch: { nickname?: string }): Promise<Me>;
   /** GET /questions?author=me */
   listMyQuestions(): Promise<QuestionSummary[]>;
+  /** 公開討論串列表；目前只由 mock 資料提供 */
+  listForumQuestions(): Promise<QuestionDetail[]>;
   getQuestion(id: string): Promise<QuestionDetail>;
   createQuestion(req: CreateQuestionRequest): Promise<QuestionDetail>;
   deleteQuestion(id: string): Promise<void>;
@@ -151,7 +156,7 @@ export type AskerApi = {
   unvote(answerId: string): Promise<VoteSummary>;
   uploadMedia(
     file: Blob,
-    kind: "image" | "audio",
+    kind: "image" | "audio" | "video",
     durationSeconds?: number,
   ): Promise<Media>;
   /** 對應 Socket.IO 的 answers.changed 等訊號 */

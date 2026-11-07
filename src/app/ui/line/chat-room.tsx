@@ -13,10 +13,13 @@ import {
   LoaderCircle,
   Menu,
   Mic,
+  MoreHorizontal,
   Pin,
+  Plus,
   SendHorizontal,
   ChevronRight,
   Trash2,
+  Video,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -68,6 +71,8 @@ export type ChatRoomProps = {
   onToggleMute: () => void;
   onTogglePin: () => void;
   notify: Notify;
+  locationSharing: "off" | "approximate";
+  onLocationSharingChange: (value: "off" | "approximate") => void;
 };
 
 /** 問題本文或一則回答 */
@@ -99,6 +104,7 @@ export function ChatRoom(props: ChatRoomProps) {
   const nearBottomRef = useRef(true);
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLInputElement>(null);
 
   const [text, setText] = useState("");
   const [recording, setRecording] = useState(false);
@@ -110,6 +116,10 @@ export function ChatRoom(props: ChatRoomProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
+  const [draftOptionsOpen, setDraftOptionsOpen] = useState(false);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const isAuthor = !question || question.author.id === meId;
 
   const label = categoryLabel(props.category);
   const othersAnswers = useMemo(
@@ -119,6 +129,7 @@ export function ChatRoom(props: ChatRoomProps) {
   const othersCount = othersAnswers.length;
   const canResolve =
     !!question &&
+    isAuthor &&
     question.status !== "resolved" &&
     !question.accepted_answer_id &&
     othersCount > 0;
@@ -131,7 +142,7 @@ export function ChatRoom(props: ChatRoomProps) {
       out.push({
         key: "question",
         answer: null,
-        self: true,
+        self: question.author.id === meId,
         authorName: question.author.nickname,
         at: Date.parse(question.created_at),
         body: question.body,
@@ -177,8 +188,8 @@ export function ChatRoom(props: ChatRoomProps) {
           key: "asked-note",
           text:
             props.category === "uncategorized" || props.category === "other"
-              ? "你開了一個新問題"
-              : `你開了一個「${label}」的問題`,
+              ? `${question?.author.nickname ?? "有人"} 開了一個新問題`
+              : `${question?.author.nickname ?? "有人"} 開了一個「${label}」的問題`,
         });
       }
       if (p.key === props.unreadMarkerKey) {
@@ -287,6 +298,21 @@ export function ChatRoom(props: ChatRoomProps) {
     props.onSend({ kind: "images", files });
   }
 
+  function handlePickVideo(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!["video/mp4", "video/webm", "video/quicktime"].includes(file.type)) {
+      notify("影片格式要是 MP4、WebM 或 MOV", "error");
+      return;
+    }
+    if (file.size > META.limits.video_max_bytes) {
+      notify("影片不能超過 30 MB", "error");
+      return;
+    }
+    props.onSend({ kind: "video", file });
+  }
+
   /**
    * 長輩按「問題解決了」時，幫到他的回答通常就在畫面上，
    * 所以不另外列清單，畫面停在原地，直接點那則回答（像 LINE 的選取訊息）。
@@ -320,6 +346,8 @@ export function ChatRoom(props: ChatRoomProps) {
     ? null
     : question.status === "resolved"
       ? { text: "這個問題已經解決了", className: "bg-claude-green/15 text-claude-green" }
+      : !isAuthor
+        ? { text: "加入討論，分享你的回答", className: "bg-claude-sand text-stone-600" }
       : question.status === "in_progress"
         ? { text: "有人正在協助您", className: "bg-claude-blue/15 text-claude-blue" }
         : othersCount === 0
@@ -341,10 +369,19 @@ export function ChatRoom(props: ChatRoomProps) {
       ref={rootRef}
       className="absolute inset-0 z-20 flex flex-col animate-in duration-200 slide-in-from-right"
       style={{ background: CHAT_BG }}
+      onTouchStart={(event) => { swipeStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY }; }}
+      onTouchEnd={(event) => {
+        const start = swipeStart.current;
+        swipeStart.current = null;
+        if (!start || selecting || drawerOpen || recording || menu || confirm || lightbox) return;
+        const dx = event.changedTouches[0].clientX - start.x;
+        const dy = event.changedTouches[0].clientY - start.y;
+        if (dx < -85 && Math.abs(dx) > Math.abs(dy) * 1.4) props.onBack();
+      }}
     >
       {selecting ? (
         <header className="flex h-16 shrink-0 items-center justify-center bg-claude-ink px-4 text-white">
-          <p className="text-[19px] font-bold">請點一下幫到您的那則回答</p>
+          <p className="text-[17px] font-bold">請點一下幫到您的那則回答</p>
         </header>
       ) : (
         <header className="flex h-16 shrink-0 items-center gap-1 pr-1 pl-0.5">
@@ -356,22 +393,22 @@ export function ChatRoom(props: ChatRoomProps) {
           >
             <ChevronLeft className="size-8" />
             {props.unreadElsewhere > 0 && (
-              <span className="-ml-1 text-[17px] font-medium">
+              <span className="-ml-1 text-[15px] font-medium">
                 {props.unreadElsewhere > 99 ? "99+" : props.unreadElsewhere}
               </span>
             )}
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="flex items-center gap-1 text-[18px] leading-tight font-bold text-stone-900">
+            <h1 className="flex items-center gap-1 text-[17px] leading-tight font-bold text-stone-900">
               <span className="truncate">
-                {question ? (question.title ?? "（內容待確認）") : "新問題"}
+                {question ? "討論串" : "新問題"}
               </span>
               {members > 1 && <span className="shrink-0 font-normal">({members})</span>}
               {props.prefs?.muted && (
                 <BellOff className="size-4 shrink-0" aria-label="已關閉提醒" />
               )}
             </h1>
-            <p className="truncate text-[14px] text-stone-600">{subtitle}</p>
+            <p className="truncate text-[13px] text-stone-600">{subtitle}</p>
           </div>
           {question && (
             <IconButton label="問題選單" onClick={() => setDrawerOpen(true)}>
@@ -379,6 +416,15 @@ export function ChatRoom(props: ChatRoomProps) {
             </IconButton>
           )}
         </header>
+      )}
+
+      {!question && draftOptionsOpen && (
+        <div className="mx-3 mb-2 rounded-2xl bg-white p-3 shadow-sm">
+          <label className="flex items-center justify-between gap-3 text-[15px] text-claude-ink">
+            <span><strong className="block">通知附近使用者</strong><span className="block text-[12px] text-stone-500">提供概略位置，讓附近的人看到問題</span></span>
+            <input type="checkbox" checked={props.locationSharing !== "off"} onChange={(event) => props.onLocationSharingChange(event.target.checked ? "approximate" : "off")} className="size-5 accent-claude" />
+          </label>
+        </div>
       )}
 
       {banner &&
@@ -389,7 +435,7 @@ export function ChatRoom(props: ChatRoomProps) {
             type="button"
             onClick={startSelecting}
             className={cn(
-              "flex min-h-12 shrink-0 items-center justify-center gap-1 px-3 py-2 text-center text-[16px] font-medium",
+              "flex min-h-12 shrink-0 items-center justify-center gap-1 px-3 py-2 text-center text-[15px] font-medium",
               banner.className,
             )}
           >
@@ -422,7 +468,7 @@ export function ChatRoom(props: ChatRoomProps) {
                 key={item.key}
                 className={cn("my-3 flex justify-center", selecting && "opacity-35")}
               >
-                <span className="rounded-full bg-claude-sand px-3 py-0.5 text-[13px] text-stone-700">
+                <span className="rounded-full bg-claude-sand px-3 py-0.5 text-[12px] text-stone-700">
                   {item.label}
                 </span>
               </div>
@@ -434,7 +480,7 @@ export function ChatRoom(props: ChatRoomProps) {
                 key={item.key}
                 className={cn("my-3 flex justify-center px-4", selecting && "opacity-35")}
               >
-                <span className="rounded-2xl bg-claude-sand px-4 py-2.5 text-center text-[16px] leading-relaxed whitespace-pre-wrap text-stone-700">
+                <span className="rounded-2xl bg-claude-sand px-4 py-2.5 text-center text-[15px] leading-relaxed whitespace-pre-wrap text-stone-700">
                   {item.text}
                 </span>
               </div>
@@ -447,7 +493,7 @@ export function ChatRoom(props: ChatRoomProps) {
                 data-unread-marker
                 className={cn("my-3 flex justify-center", selecting && "opacity-35")}
               >
-                <span className="rounded-full bg-claude/12 px-3 py-1 text-[13px] font-medium text-claude-dark">
+                <span className="rounded-full bg-claude/12 px-3 py-1 text-[12px] font-medium text-claude-dark">
                   以下為新回答
                 </span>
               </div>
@@ -470,7 +516,7 @@ export function ChatRoom(props: ChatRoomProps) {
         })}
         {sending && (
           <div className="mt-3 flex justify-end">
-            <span className="flex items-center gap-1.5 rounded-full bg-claude/15 px-3 py-1.5 text-[14px] text-claude-dark">
+            <span className="flex items-center gap-1.5 rounded-full bg-claude/15 px-3 py-1.5 text-[13px] text-claude-dark">
               <LoaderCircle className="size-3.5 animate-spin" />
               傳送中…
             </span>
@@ -496,7 +542,7 @@ export function ChatRoom(props: ChatRoomProps) {
           <button
             type="button"
             onClick={() => setSelecting(false)}
-            className="w-full rounded-2xl bg-claude-sand py-3.5 text-lg font-medium text-stone-700 active:bg-stone-300"
+            className="w-full rounded-2xl bg-claude-sand py-3.5 text-[17px] font-medium text-stone-700 active:bg-stone-300"
           >
             取消
           </button>
@@ -515,22 +561,24 @@ export function ChatRoom(props: ChatRoomProps) {
           }}
         />
       ) : (
-        <div className="flex shrink-0 items-end gap-0.5 border-t border-claude-sand bg-claude-ivory px-1.5 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-          <IconButton
-            label="拍照"
-            disabled={sending}
-            onClick={() => cameraRef.current?.click()}
-          >
-            <Camera className="size-7" />
-          </IconButton>
-          <IconButton
-            label="從相簿選照片"
-            disabled={sending}
-            onClick={() => galleryRef.current?.click()}
-          >
-            <ImageIcon className="size-7" />
-          </IconButton>
-          <div className="mx-1 flex min-h-12 flex-1 items-end rounded-[24px] bg-claude-sand/70 px-4">
+        <div className="relative shrink-0 border-t border-claude-sand bg-claude-ivory px-1.5 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+          {attachmentMenuOpen && (
+            <div className="absolute bottom-full left-2 z-10 mb-2 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-claude-sand">
+              {([
+                ["camera", "拍照", Camera],
+                ["gallery", "從相簿選照片", ImageIcon],
+                ["video", "傳送影片", Video],
+              ] as const).map(([kind, label, Icon]) => (
+                <button key={label} type="button" onClick={() => { setAttachmentMenuOpen(false); if (kind === "camera") cameraRef.current?.click(); else if (kind === "gallery") galleryRef.current?.click(); else videoRef.current?.click(); }} className="flex min-h-11 items-center gap-2 px-4 text-left text-[15px] text-claude-ink hover:bg-claude-sand/50">
+                  <Icon className="size-5 shrink-0" />{label}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex min-w-0 items-end gap-0.5">
+          {!question && <IconButton label="發問額外選項" onClick={() => setDraftOptionsOpen((open) => !open)} className="max-[300px]:size-10"><MoreHorizontal className="size-6" /></IconButton>}
+          <IconButton label="新增附件" disabled={sending} onClick={() => setAttachmentMenuOpen((open) => !open)} className="max-[300px]:size-10"><Plus className="size-7" /></IconButton>
+          <div className="mx-1 flex min-h-12 min-w-0 flex-1 items-end rounded-[24px] bg-claude-sand/70 px-4 max-[300px]:px-2">
             <textarea
               rows={1}
               value={text}
@@ -539,7 +587,7 @@ export function ChatRoom(props: ChatRoomProps) {
               onKeyDown={handleKeyDown}
               placeholder={question ? "補充說明…" : "請輸入您的問題…"}
               aria-label={question ? "補充說明" : "輸入問題"}
-              className="field-sizing-content max-h-36 min-h-12 min-w-0 flex-1 resize-none bg-transparent py-3 text-[17px] leading-6 outline-none placeholder:text-stone-500"
+              className="field-sizing-content max-h-36 min-h-12 min-w-0 flex-1 resize-none bg-transparent py-3 text-[15px] leading-6 outline-none placeholder:text-stone-500"
             />
           </div>
           {text.trim() ? (
@@ -564,6 +612,7 @@ export function ChatRoom(props: ChatRoomProps) {
               <Mic className="size-7" />
             </IconButton>
           )}
+          </div>
         </div>
       )}
       <input
@@ -582,6 +631,7 @@ export function ChatRoom(props: ChatRoomProps) {
         hidden
         onChange={handlePickFiles}
       />
+      <input ref={videoRef} type="file" accept="video/mp4,video/webm,video/quicktime" hidden onChange={handlePickVideo} />
 
       {menu && (
         <PostMenu
@@ -599,6 +649,7 @@ export function ChatRoom(props: ChatRoomProps) {
           prefs={props.prefs}
           answerCount={othersCount}
           canResolve={canResolve}
+          isAuthor={isAuthor}
           onResolve={() => {
             setDrawerOpen(false);
             startSelecting();
@@ -617,7 +668,7 @@ export function ChatRoom(props: ChatRoomProps) {
             confirm.answer.body ??
             (confirm.answer.media.some((m) => m.kind === "audio")
               ? "（語音訊息）"
-              : "（照片）")
+              : confirm.answer.media.some((m) => m.kind === "video") ? "（影片）" : "（照片）")
           }
           body="確定後，這個問題會標示為「已解決」，之後不能更改。"
           confirmLabel="是，解決了"
@@ -696,6 +747,8 @@ function PostRow({
       {post.media.map((m) =>
         m.kind === "image" ? (
           <ImageBubble key={m.id} media={m} onOpen={onOpenImage} />
+        ) : m.kind === "video" ? (
+          <video key={m.id} src={m.url} controls playsInline preload="metadata" className="max-h-64 max-w-[220px] rounded-2xl bg-black" aria-label="影片訊息" />
         ) : (
           <AudioBubble key={m.id} media={m} self={post.self} />
         ),
@@ -713,7 +766,7 @@ function PostRow({
       <div
         data-key={post.key}
         className={cn(
-          "flex items-end justify-end gap-1.5 pl-12",
+          "flex items-end justify-end gap-1.5 pl-12 max-[300px]:flex-col-reverse max-[300px]:items-end max-[300px]:pl-4",
           first ? "mt-3" : "mt-1",
           // 選取模式時自己的訊息不能選，變淡
           selectMode && "pointer-events-none opacity-35",
@@ -729,7 +782,7 @@ function PostRow({
     <div
       data-key={post.key}
       className={cn(
-        "relative flex items-start gap-2 pr-8",
+        "relative flex items-start gap-2 pr-8 max-[300px]:gap-1 max-[300px]:pr-2",
         first ? "mt-3" : "mt-1.5",
         selectMode && !selectable && "pointer-events-none opacity-35",
       )}
@@ -754,19 +807,19 @@ function PostRow({
           </span>
         </>
       )}
-      <div className="w-9 shrink-0">{first && <Avatar name={post.authorName} size={36} />}</div>
+      <div className="w-9 shrink-0 max-[300px]:hidden">{first && <Avatar name={post.authorName} size={36} />}</div>
       <div className="flex min-w-0 flex-col items-start">
         {first && (
-          <span className="mb-1 max-w-full truncate text-[14px] text-stone-700">
+          <span className="mb-1 max-w-full truncate text-[13px] text-stone-700">
             {post.authorName}
           </span>
         )}
-        <div className="flex max-w-full items-end gap-1.5">
+        <div className="flex max-w-full items-end gap-1.5 max-[300px]:flex-col max-[300px]:items-start">
           {bubbles}
           {time}
         </div>
         {accepted && (
-          <span className="mt-1 flex items-center gap-1 text-[14px] font-medium text-claude-green">
+          <span className="mt-1 flex items-center gap-1 text-[13px] font-medium text-claude-green">
             <CircleCheckBig className="size-4" />
             解決了我的問題
           </span>
@@ -791,7 +844,7 @@ function TextBubble({
   return (
     <div
       className={cn(
-        "relative rounded-[18px] px-3.5 py-2.5 text-[17px] leading-snug wrap-break-word whitespace-pre-wrap text-claude-ink",
+        "relative rounded-[18px] px-3.5 py-2.5 text-[15px] leading-snug wrap-break-word whitespace-pre-wrap text-claude-ink",
         !self && "shadow-[0_1px_1px_rgb(20_20_19/0.06)]",
         tail && (self ? "rounded-tr-[4px]" : "rounded-tl-[4px]"),
         accepted && "ring-2 ring-claude-green",
@@ -873,6 +926,7 @@ function QuestionDrawer({
   prefs,
   answerCount,
   canResolve,
+  isAuthor,
   onResolve,
   onClose,
   onToggleMute,
@@ -883,6 +937,7 @@ function QuestionDrawer({
   prefs: QuestionPrefs | null;
   answerCount: number;
   canResolve: boolean;
+  isAuthor: boolean;
   onResolve: () => void;
   onClose: () => void;
   onToggleMute: () => void;
@@ -921,8 +976,8 @@ function QuestionDrawer({
         </div>
         <div className="flex flex-col items-center px-5 pb-4">
           <QuestionAvatar q={question} size={72} />
-          <p className="mt-3 text-center text-lg leading-snug font-bold">
-            {question.title ?? "（內容待確認）"}
+          <p className="mt-3 text-center text-[17px] leading-snug font-bold">
+            {question.body ?? "（內容待確認）"}
           </p>
         </div>
         <div className="grid grid-cols-2 border-y border-claude-sand/70 py-3">
@@ -938,19 +993,19 @@ function QuestionDrawer({
             </button>
           ))}
         </div>
-        {question.status !== "resolved" && (
+        {isAuthor && question.status !== "resolved" && (
           <div className="px-5 pt-4">
             <button
               type="button"
               onClick={onResolve}
               disabled={!canResolve}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-claude py-3.5 text-lg font-bold text-white disabled:bg-claude-sand disabled:text-stone-400"
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-claude py-3.5 text-[17px] font-bold text-white disabled:bg-claude-sand disabled:text-stone-400"
             >
               <CircleCheckBig className="size-5" />
               問題解決了
             </button>
             {!canResolve && (
-              <p className="mt-1.5 text-center text-[14px] text-stone-500">
+              <p className="mt-1.5 text-center text-[13px] text-stone-500">
                 還沒有人回答，有人回答後就可以按
               </p>
             )}
@@ -958,19 +1013,19 @@ function QuestionDrawer({
         )}
         <dl className="flex-1 overflow-y-auto px-5 py-2">
           {rows.map(([k, v]) => (
-            <div key={k} className="flex justify-between border-b border-claude-sand/60 py-3 text-[16px]">
+            <div key={k} className="flex justify-between border-b border-claude-sand/60 py-3 text-[15px]">
               <dt className="text-stone-500">{k}</dt>
               <dd className="font-medium text-claude-ink">{v}</dd>
             </div>
           ))}
         </dl>
-        <button
+        {isAuthor && <button
           type="button"
           onClick={onWithdraw}
-          className="border-t border-claude-sand/70 py-4 text-[17px] text-red-600 hover:bg-red-50"
+          className="border-t border-claude-sand/70 py-4 text-[15px] text-red-600 hover:bg-red-50"
         >
           撤回問題
-        </button>
+        </button>}
       </aside>
     </div>
   );
@@ -1001,18 +1056,18 @@ function ConfirmDialog({
         aria-label={title}
         className="w-full max-w-sm rounded-2xl bg-claude-ivory p-5 shadow-xl animate-in zoom-in-95"
       >
-        <h2 className="text-center text-[19px] leading-snug font-bold">{title}</h2>
+        <h2 className="text-center text-[17px] leading-snug font-bold">{title}</h2>
         {quote && (
-          <p className="mt-3 line-clamp-4 rounded-xl bg-white px-3 py-2 text-[17px] text-claude-ink ring-1 ring-claude-sand">
+          <p className="mt-3 line-clamp-4 rounded-xl bg-white px-3 py-2 text-[15px] text-claude-ink ring-1 ring-claude-sand">
             {quote}
           </p>
         )}
-        <p className="mt-2 text-center text-[16px] text-stone-700">{body}</p>
+        <p className="mt-2 text-center text-[15px] text-stone-700">{body}</p>
         <div className="mt-5 grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="min-h-12 rounded-xl bg-claude-sand py-3 text-[17px] font-medium text-stone-800"
+            className="min-h-12 rounded-xl bg-claude-sand py-3 text-[15px] font-medium text-stone-800"
           >
             取消
           </button>
@@ -1020,7 +1075,7 @@ function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             className={cn(
-              "min-h-12 rounded-xl py-3 text-[17px] font-bold text-white",
+              "min-h-12 rounded-xl py-3 text-[15px] font-bold text-white",
               danger ? "bg-red-600" : "bg-claude-dark",
             )}
           >

@@ -47,7 +47,7 @@ export function Lightbox({ url, onClose }: { url: string; onClose: () => void })
         type="button"
         onClick={onClose}
         aria-label="關閉"
-        className="absolute top-3 right-3 flex h-12 items-center gap-1 rounded-full bg-white/20 px-4 text-[17px] text-white"
+        className="absolute top-3 right-3 flex h-12 items-center gap-1 rounded-full bg-white/20 px-4 text-[15px] text-white"
       >
         <X className="size-6" />
         關閉
@@ -136,7 +136,7 @@ export function AudioBubble({ media, self }: { media: Media; self: boolean }) {
           />
         ))}
       </div>
-      <span className="min-w-10 text-[16px] tabular-nums">
+      <span className="min-w-10 text-[15px] tabular-nums">
         {formatDuration(playing || current > 0 ? current : duration)}
       </span>
     </div>
@@ -268,7 +268,7 @@ export function VoiceRecorder({
         <Trash2 className="size-7" />
       </button>
       <div className="flex min-w-0 flex-1 flex-col items-center">
-        <span className="flex items-center gap-2 text-[22px] font-semibold tabular-nums text-claude-ink">
+        <span className="flex items-center gap-2 text-[20px] font-semibold tabular-nums text-claude-ink">
           <span
             className={cn(
               "size-3 rounded-full bg-red-500",

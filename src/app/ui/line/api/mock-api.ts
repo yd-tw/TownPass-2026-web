@@ -41,6 +41,7 @@ export const META: Meta = {
     media_per_post_max: 5,
     image_max_bytes: 10 * 1024 * 1024,
     audio_max_bytes: 20 * 1024 * 1024,
+    video_max_bytes: 30 * 1024 * 1024,
     audio_max_seconds: 180,
   },
 };
@@ -86,6 +87,19 @@ const AUTO_REPLY: Partial<Record<CategoryId, string>> = {
   map_navigation: "請問您現在在哪裡附近？我幫您查怎麼走比較方便。",
   app_usage: "您好，請問是卡在哪一個畫面呢？可以拍照給我看看。",
 };
+
+function tagsFor(body: string) {
+  const rules: [RegExp, string][] = [
+    [/租屋|房租|住宅|補助/, "租屋補助"],
+    [/捷運|公車|交通|停車/, "交通指引"],
+    [/詐騙|簡訊|可疑|釣魚/, "防詐騙"],
+    [/申請|申辦|文件|戶政/, "申辦服務"],
+    [/無障礙|輪椅|電梯/, "無障礙"],
+    [/公園|附近|地點|哪裡/, "在地生活"],
+  ];
+  const tags = rules.filter(([pattern]) => pattern.test(body)).map(([, tag]) => tag).slice(0, 2);
+  return tags.length ? tags : ["生活求助"];
+}
 
 /** 大量志工模式用的暱稱與回答（內容刻意寫成不管問什麼都說得通） */
 const CROWD_SURNAMES = ["王", "陳", "林", "李", "張", "黃", "吳", "劉", "蔡", "楊"];
@@ -183,6 +197,7 @@ export function createMockApi(
       id: makeId("q"),
       status: opts.status ?? "open",
       title,
+      tags: tagsFor(body),
       category,
       language: "zh-TW",
       assistance_mode: "online",
@@ -298,6 +313,39 @@ export function createMockApi(
     "從台北車站要怎麼去榮總？搭捷運還是公車比較方便？",
   );
 
+  const forum1 = addQuestion(
+    18 * MIN,
+    "admin_procedure",
+    "租屋補助要如何申請？",
+    "剛搬到臺北，想知道租屋補助要從哪裡開始申請？需要先準備哪些文件？看了一圈網站還是有點搞不清楚。",
+  );
+  forum1.author = { id: "demo-asker", nickname: "小安", points: 20 };
+  forum1.is_author = false;
+  forum1.location_sharing = "approximate";
+  addAnswer(forum1, 12 * MIN, HELPERS.an, "可以先到臺北市住宅服務網站看申請資格，通常會需要身分證明、租賃契約與所得資料。你現在是自己租屋嗎？");
+
+  const forum2 = addQuestion(
+    45 * MIN,
+    "map_navigation",
+    "大安森林公園無障礙入口怎麼走？",
+    "明天要帶家人去大安森林公園，附近有無障礙廁所嗎？輪椅推行哪個入口比較方便？",
+  );
+  forum2.author = { id: "demo-yu", nickname: "羽晴", points: 35 };
+  forum2.is_author = false;
+  forum2.location_sharing = "approximate";
+  forum2.tags = ["無障礙", "交通指引"];
+  addAnswer(forum2, 29 * MIN, HELPERS.wang, "我上次從信義路側進去，步道比較平順。公園服務中心旁也有無障礙廁所。", 2);
+
+  const forum3 = addQuestion(
+    2 * HOUR,
+    "scam_check",
+    "停車費催繳簡訊是真的嗎？",
+    "收到一封說要補繳停車費的簡訊，網址看起來怪怪的。請問怎麼確認是不是真的？",
+  );
+  forum3.author = { id: "demo-cheng", nickname: "阿成", points: 0 };
+  forum3.is_author = false;
+  forum3.location_sharing = "off";
+
   // ---- 工具 ----
   const findQuestion = (id: string) => {
     const q = questions.find((x) => x.id === id);
@@ -318,6 +366,7 @@ export function createMockApi(
     id: q.id,
     status: q.status,
     title: q.title,
+    tags: q.tags,
     category: q.category,
     language: q.language,
     assistance_mode: q.assistance_mode,
@@ -423,7 +472,7 @@ export function createMockApi(
           throw new ApiError(400, "VALIDATION_ERROR", "暱稱長度需為 1 到 30 字");
         }
         me.nickname = nickname;
-        for (const q of questions) q.author = meUser();
+        for (const q of questions) if (q.author.id === me.id) q.author = meUser();
         for (const a of answers) if (a.author.id === me.id) a.author = meUser();
       }
       return clone(me);
@@ -437,6 +486,11 @@ export function createMockApi(
           .sort((a, b) => b.created_at.localeCompare(a.created_at))
           .map(toSummary),
       );
+    },
+
+    async listForumQuestions() {
+      await wait();
+      return clone([...questions].sort((a, b) => b.created_at.localeCompare(a.created_at)));
     },
 
     async getQuestion(id) {
@@ -460,11 +514,12 @@ export function createMockApi(
       });
       const fallbackTitle = media.some((m) => m.kind === "audio")
         ? "（語音提問）"
-        : "（照片提問）";
+        : media.some((m) => m.kind === "video") ? "（影片提問）" : "（照片提問）";
       const q: QuestionDetail = {
         id: makeId("q"),
         status: "open",
         title: req.title ?? (body ? body.slice(0, 30) : fallbackTitle),
+        tags: tagsFor(body),
         category: req.category,
         language: req.language,
         assistance_mode: req.assistance_mode,
@@ -608,6 +663,13 @@ export function createMockApi(
         }
         if (file.size > META.limits.image_max_bytes) {
           throw new ApiError(413, "FILE_TOO_LARGE", "照片不能超過 10 MB");
+        }
+      } else if (kind === "video") {
+        if (!["video/mp4", "video/webm", "video/quicktime"].includes(file.type)) {
+          throw new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "影片只支援 MP4、WebM、MOV");
+        }
+        if (file.size > META.limits.video_max_bytes) {
+          throw new ApiError(413, "FILE_TOO_LARGE", "影片不能超過 30 MB");
         }
       } else {
         const type = file.type.split(";")[0];
