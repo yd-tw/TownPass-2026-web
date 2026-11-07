@@ -80,6 +80,20 @@ const HELPERS: Record<string, PublicUser> = {
 };
 
 /** 送出新問題後，模擬幾秒後有熱心的人回覆 */
+/** 模擬後端的自動分類：沒選分類時看關鍵字，看不出來就是未分類 */
+const AUTO_CATEGORY: [RegExp, CategoryId][] = [
+  [/詐騙|匯款|中獎|ATM|驗證碼|帳戶被/i, "scam_check"],
+  [/公文|通知單|繳款單|合約|契約|來信|寄來的信/, "document_contract"],
+  [/怎麼去|怎麼走|路線|導航|在哪裡|捷運站/, "map_navigation"],
+  [/台北通|城市通|App|登入|密碼/i, "app_usage"],
+  [/申請|申辦|區公所|補助|戶政|證明書/, "admin_procedure"],
+  [/英文|日文|翻譯|看不懂.*字/, "language"],
+];
+
+function autoCategory(text: string): CategoryId {
+  return AUTO_CATEGORY.find(([re]) => re.test(text))?.[1] ?? "uncategorized";
+}
+
 const AUTO_REPLY: Partial<Record<CategoryId, string>> = {
   scam_check:
     "請先不要匯款、也不要把驗證碼告訴任何人！可以撥 165 反詐騙專線確認。",
@@ -343,6 +357,17 @@ export function createMockApi(
   forum3.is_author = false;
   forum3.location_sharing = "off";
 
+  // 後端看不出類別的問題，等志工分類
+  const forum4 = addQuestion(
+    35 * MIN,
+    "uncategorized",
+    "這個要怎麼弄？",
+    "我兒子幫我裝的那個東西一直跳出來，不知道要按哪裡，好煩喔",
+  );
+  forum4.author = { id: "demo-mei", nickname: "美玉阿嬤", points: 0 };
+  forum4.is_author = false;
+  forum4.location_sharing = "off";
+
   // ---- 工具 ----
   const findQuestion = (id: string) => {
     const q = questions.find((x) => x.id === id);
@@ -485,9 +510,29 @@ export function createMockApi(
       );
     },
 
-    async listForumQuestions() {
+    async listForumQuestions(filter) {
       await wait();
-      return clone([...questions].sort((a, b) => b.created_at.localeCompare(a.created_at)));
+      return clone(
+        questions
+          .filter((q) => !filter?.category || q.category === filter.category)
+          .sort((a, b) => b.created_at.localeCompare(a.created_at)),
+      );
+    },
+
+    async setQuestionCategory(questionId, category) {
+      await wait();
+      const q = findQuestion(questionId);
+      if (category === "uncategorized") {
+        throw new ApiError(400, "VALIDATION_ERROR", "category 的值不正確");
+      }
+      // 發問者本人可以改；志工只能改未分類的
+      if (q.author.id !== me.id && q.category !== "uncategorized") {
+        throw new ApiError(409, "INVALID_STATE", "這個問題已經分類過了");
+      }
+      q.category = category;
+      emit({ type: "question.changed", question_id: q.id });
+      emit({ type: "feed.changed" });
+      return clone(q);
     },
 
     async getQuestion(id) {
@@ -517,7 +562,7 @@ export function createMockApi(
         status: "open",
         title: req.title ?? (body ? body.slice(0, 30) : fallbackTitle),
         tags: tagsFor(body),
-        category: req.category,
+        category: req.category ?? autoCategory(body),
         language: req.language,
         assistance_mode: req.assistance_mode,
         location_sharing: req.location_sharing ?? me.location_sharing,
@@ -611,7 +656,7 @@ export function createMockApi(
       await wait();
       const q = findQuestion(questionId);
       if (q.author.id !== me.id) throw new ApiError(403, "FORBIDDEN", "只有提問者可以標記為解決");
-      if (q.status === "resolved") throw new ApiError(409, "ALREADY_RESOLVED", "這個問題已經解決了");
+      if (q.status === "resolved") throw new ApiError(409, "INVALID_STATE", "這個問題已經解決了");
       q.status = "resolved";
       emit({ type: "question.changed", question_id: q.id });
       return clone(q);

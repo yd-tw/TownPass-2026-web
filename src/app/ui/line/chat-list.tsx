@@ -10,7 +10,6 @@ import { categoryLabel } from "./categories";
 import { answerPreview, formatListTime } from "./format";
 import { unreadCount, type QuestionPrefs } from "./types";
 import { useBackLayer } from "./use-back-layer";
-import { TabHeader } from "./tab-header";
 import { useLongPress } from "./use-long-press";
 
 /*
@@ -102,9 +101,7 @@ export function ChatList({
 
   return (
     <div className="relative flex h-full flex-col bg-claude-ivory">
-      <TabHeader title="聊天" />
-
-      <div className="px-4 pb-3">
+      <div className="px-4 pt-4 pb-3">
         <label className="flex h-11 items-center gap-2 rounded-xl bg-claude-sand/70 px-3.5 text-stone-500">
           <Search className="size-5 shrink-0" />
           <input

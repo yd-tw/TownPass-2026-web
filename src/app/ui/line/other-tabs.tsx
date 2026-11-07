@@ -1,19 +1,17 @@
 "use client";
 
 import {
+  Bell,
   ChevronRight,
   House,
   MessageCircle,
   MessageCircleQuestion,
   MessagesSquare,
-  Pencil,
   type LucideIcon,
 } from "lucide-react";
-import { useState, type FormEvent } from "react";
 import { cn } from "@/lib/utils";
-import type { Me, QuestionSummary } from "./api/types";
-import { Avatar, QuestionAvatar } from "./avatar";
-import { TabHeader } from "./tab-header";
+import type { QuestionSummary } from "./api/types";
+import { QuestionAvatar } from "./avatar";
 import type { Tab } from "./types";
 
 const NAV: { id: Tab; label: string; icon: LucideIcon }[] = [
@@ -61,156 +59,125 @@ export function BottomNav({
   );
 }
 
+export type HomeQuestion = {
+  q: QuestionSummary;
+  /** 還沒看過的新回答 */
+  unread: number;
+  /** 別人的回答數 */
+  answered: number;
+};
+
+/** 問題的進度，用一句白話說 */
+function statusText({ q, unread, answered }: HomeQuestion) {
+  if (unread > 0) return { text: "有新回答", className: "font-bold text-claude-dark" };
+  if (q.status === "resolved") return { text: "已解決", className: "text-claude-green" };
+  if (q.status === "in_progress") return { text: "有人在協助您", className: "text-claude-blue" };
+  if (answered > 0) return { text: `已有 ${answered} 人回答`, className: "text-stone-600" };
+  return { text: "等待回答中", className: "text-stone-600" };
+}
+
+/**
+ * 主頁只放長輩最需要的三件事：
+ * 1. 有沒有人回答我（有新回答才出現，點了直接看）
+ * 2. 我要發問（最大的按鈕）
+ * 3. 我的問題進度（最多三題，各一句狀態）
+ */
 export function HomeTab({
-  me,
-  stats,
-  onNicknameChange,
+  questions,
   onAsk,
-  onShowChats,
-  recent,
   onOpen,
+  onShowChats,
   note,
 }: {
-  me: Me | null;
-  stats: { total: number; waiting: number; resolved: number };
-  /** 最近的問題（最多 3 個），讓長輩在主頁就看到進度 */
-  recent: { q: QuestionSummary; unread: number; preview: string }[];
-  onOpen: (id: string) => void;
-  onNicknameChange: (name: string) => Promise<boolean>;
+  /** 自己的問題，新的在前 */
+  questions: HomeQuestion[];
   onAsk: () => void;
+  onOpen: (id: string) => void;
   onShowChats: () => void;
   /** 目前的連線模式說明（示範模式、瀏覽器測試帳號）；在 App 內正式使用時不顯示 */
   note?: string | null;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const nickname = me?.nickname ?? "…";
-
-  async function save(e: FormEvent) {
-    e.preventDefault();
-    const trimmed = draft.trim();
-    if (trimmed && trimmed !== nickname) {
-      if (!(await onNicknameChange(trimmed))) return;
-    }
-    setEditing(false);
-  }
+  const withNew = questions.filter((x) => x.unread > 0);
+  const recent = questions.slice(0, 3);
 
   return (
     <div className="flex h-full flex-col bg-claude-ivory">
-      <TabHeader title="主頁" />
-      <div className="flex-1 overflow-y-auto">
-        <section className="flex items-center gap-4 px-4 py-4 max-[300px]:items-start max-[300px]:gap-2">
-          <Avatar name={nickname} size={48} />
-          <div className="min-w-0 flex-1">
-            {editing ? (
-              <form onSubmit={save} className="flex gap-2">
-                <input
-                  autoFocus
-                  value={draft}
-                  maxLength={30}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onBlur={save}
-                  className="h-11 min-w-0 flex-1 rounded-lg border border-claude-sand px-3 text-[17px] outline-none focus:border-claude"
-                />
-              </form>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft(nickname);
-                  setEditing(true);
-                }}
-                className="flex min-h-11 max-w-full items-center gap-1.5 text-[18px] font-bold"
-              >
-                <span className="truncate">{nickname}</span>
-                <Pencil className="size-5 shrink-0 text-stone-500" />
-              </button>
-            )}
-            <p className="mt-0.5 text-[13px] text-stone-600">
-              回答您的人會看到這個暱稱，點名字可以修改
-            </p>
-          </div>
-        </section>
-
-        <section className="mx-4 grid grid-cols-3 overflow-hidden rounded-2xl border border-claude-sand bg-white max-[300px]:grid-cols-1">
-          {(
-            [
-              ["我的問題", stats.total],
-              ["等待回答", stats.waiting],
-              ["已解決", stats.resolved],
-            ] as const
-          ).map(([label, value]) => (
-            <button
-              key={label}
-              type="button"
-              onClick={onShowChats}
-              className="flex flex-col items-center gap-0.5 py-4 not-last:border-r not-last:border-claude-sand max-[300px]:flex-row max-[300px]:justify-between max-[300px]:px-4 max-[300px]:not-last:border-r-0 max-[300px]:not-last:border-b"
-            >
-              <span className="text-[24px] font-bold text-claude-ink">{value}</span>
-              <span className="text-[15px] text-stone-600">{label}</span>
-            </button>
-          ))}
-        </section>
-
-        <section className="px-4 py-6">
+      <div className="flex-1 overflow-y-auto px-4 pt-3 pb-6">
+        {withNew.length > 0 && (
           <button
             type="button"
-            onClick={onAsk}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-claude py-5 text-[20px] font-bold text-white shadow-sm active:bg-claude-dark"
+            onClick={() => (withNew.length === 1 ? onOpen(withNew[0].q.id) : onShowChats())}
+            className="mt-1 flex w-full items-center gap-3 rounded-2xl bg-claude/12 p-4 text-left ring-1 ring-claude/30 active:bg-claude/20"
           >
-            <MessageCircleQuestion className="size-7" />
-            我要發問
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-claude-dark text-white">
+              <Bell className="size-6" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[18px] font-bold text-claude-ink">
+                {withNew.length === 1 ? "有人回答您了" : `${withNew.length} 個問題有新回答`}
+              </span>
+              <span className="block truncate text-[15px] text-stone-700">
+                {withNew.length === 1
+                  ? (withNew[0].q.title ?? "（內容待確認）")
+                  : "點這裡查看"}
+              </span>
+            </span>
+            <ChevronRight className="size-6 shrink-0 text-claude-dark" />
           </button>
-          <p className="mt-3 text-center text-[15px] leading-relaxed text-stone-600">
-            看不懂的公文、不確定是不是詐騙、不知道怎麼走，
-            <br />
-            都可以打字、拍照或錄音問大家。
-          </p>
-        </section>
+        )}
+
+        <button
+          type="button"
+          onClick={onAsk}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-claude py-6 text-[22px] font-bold text-white shadow-sm active:bg-claude-dark"
+        >
+          <MessageCircleQuestion className="size-8" />
+          我要發問
+        </button>
+        <p className="mt-2 text-center text-[16px] text-stone-600">打字、拍照、錄音都可以</p>
 
         {recent.length > 0 && (
-          <section className="px-4 pb-6">
+          <section className="mt-8">
             <div className="flex items-center justify-between pb-2">
-              <h2 className="text-[17px] font-bold text-claude-ink">最近的問題</h2>
-              <button
-                type="button"
-                onClick={onShowChats}
-                className="flex min-h-11 items-center gap-0.5 text-[15px] text-claude-dark"
-              >
-                全部
-                <ChevronRight className="size-4" />
-              </button>
+              <h2 className="text-[18px] font-bold text-claude-ink">我的問題</h2>
+              {questions.length > recent.length && (
+                <button
+                  type="button"
+                  onClick={onShowChats}
+                  className="flex min-h-11 items-center gap-0.5 text-[16px] text-claude-dark"
+                >
+                  全部
+                  <ChevronRight className="size-5" />
+                </button>
+              )}
             </div>
             <ul className="overflow-hidden rounded-2xl border border-claude-sand bg-white">
-              {recent.map(({ q, unread, preview }) => (
-                <li key={q.id} className="not-last:border-b not-last:border-claude-sand">
-                  <button
-                    type="button"
-                    onClick={() => onOpen(q.id)}
-                    className="flex w-full items-center gap-3 px-3 py-3 text-left active:bg-claude-sand/40"
-                  >
-                    <QuestionAvatar q={q} size={44} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[16px] font-semibold text-claude-ink">
-                        {q.title ?? "（內容待確認）"}
-                      </p>
-                      <p className="truncate text-[14px] text-stone-600">{preview}</p>
-                    </div>
-                    {unread > 0 && (
-                      <span className="min-w-6 rounded-full bg-claude-dark px-1.5 text-center text-[13px] leading-6 font-bold text-white">
-                        {unread > 99 ? "99+" : unread}
-                      </span>
-                    )}
-                  </button>
-                </li>
-              ))}
+              {recent.map((item) => {
+                const status = statusText(item);
+                return (
+                  <li key={item.q.id} className="not-last:border-b not-last:border-claude-sand">
+                    <button
+                      type="button"
+                      onClick={() => onOpen(item.q.id)}
+                      className="flex min-h-18 w-full items-center gap-3 px-3 py-3 text-left active:bg-claude-sand/40"
+                    >
+                      <QuestionAvatar q={item.q} size={44} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[17px] font-semibold text-claude-ink">
+                          {item.q.title ?? "（內容待確認）"}
+                        </p>
+                        <p className={cn("text-[15px]", status.className)}>{status.text}</p>
+                      </div>
+                      <ChevronRight className="size-5 shrink-0 text-stone-400" />
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}
 
-        {note && (
-          <p className="px-4 pb-6 text-center text-[12px] text-stone-500">{note}</p>
-        )}
+        {note && <p className="mt-8 text-center text-[12px] text-stone-500">{note}</p>}
       </div>
     </div>
   );

@@ -16,6 +16,7 @@ import {
   Pin,
   Plus,
   SendHorizontal,
+  Tag,
   ThumbsUp,
   Trash2,
   Video,
@@ -37,7 +38,7 @@ import { META } from "./api/mock-api";
 import type { Answer, CategoryId, Media, QuestionDetail } from "./api/types";
 import { Avatar, QuestionAvatar } from "./avatar";
 import { categoryLabel } from "./categories";
-import { IconButton } from "./chat-list";
+import { IconButton, Sheet } from "./chat-list";
 import { formatClock, formatDateDivider, isSameDay } from "./format";
 import { AudioBubble, ImageBubble, Lightbox, VoiceRecorder } from "./media";
 import type { Notify, Outgoing, QuestionPrefs } from "./types";
@@ -64,6 +65,8 @@ export type ChatRoomProps = {
   onBack: () => void;
   onSend: (out: Outgoing) => Promise<boolean>;
   onResolve: () => Promise<void>;
+  /** 志工幫未分類的問題選分類（PUT /questions/{id}/category） */
+  onClassify: (category: CategoryId) => Promise<void>;
   onToggleLike: (answer: Answer) => Promise<void>;
   onDeleteAnswer: (answer: Answer) => void;
   onWithdraw: () => Promise<void>;
@@ -108,6 +111,7 @@ export function ChatRoom(props: ChatRoomProps) {
   const [menu, setMenu] = useState<{ post: Post; top: number } | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [resolving, setResolving] = useState(false);
+  const [classifyOpen, setClassifyOpen] = useState(false);
   const [likingIds, setLikingIds] = useState<Set<string>>(() => new Set());
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -393,7 +397,7 @@ export function ChatRoom(props: ChatRoomProps) {
           <div className="min-w-0 flex-1">
             <h1 className="flex items-center gap-1 text-[17px] leading-tight font-bold text-stone-900">
               <span className="truncate">
-                {question ? (question.title ?? "（內容待確認）") : "新問題"}
+                {question ? "討論串" : "新問題"}
               </span>
               {members > 1 && <span className="shrink-0 font-normal">({members})</span>}
               {props.prefs?.muted && (
@@ -408,6 +412,53 @@ export function ChatRoom(props: ChatRoomProps) {
             </IconButton>
           )}
         </header>
+
+      {question && !isAuthor && question.category === "uncategorized" && (
+        <div className="mx-3 mb-2 flex shrink-0 items-center gap-2 rounded-xl bg-white px-3 py-2 ring-1 ring-claude-sand">
+          <Tag className="size-5 shrink-0 text-claude-dark" />
+          <span className="min-w-0 flex-1 text-[15px] text-claude-ink">這題還沒有分類</span>
+          <button
+            type="button"
+            onClick={() => setClassifyOpen(true)}
+            className="min-h-10 shrink-0 rounded-full bg-claude px-4 text-[15px] font-bold text-white active:bg-claude-dark"
+          >
+            幫忙分類
+          </button>
+        </div>
+      )}
+      {classifyOpen && (
+        <Sheet onClose={() => setClassifyOpen(false)}>
+          <div className="px-5 pt-5 pb-4">
+            <h2 className="text-center text-[19px] font-bold">這題是關於什麼？</h2>
+            <p className="mt-1 text-center text-[14px] text-stone-600">選一個最接近的，選了之後就不能再改</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              {/* 「未分類」不能選，送出會回 400 */}
+              {META.categories
+                .filter((c) => c.id !== "uncategorized")
+                .map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      setClassifyOpen(false);
+                      props.onClassify(c.id);
+                    }}
+                    className="min-h-12 rounded-xl bg-white px-3 text-[16px] font-medium text-claude-ink ring-1 ring-claude-sand active:bg-claude-sand/50"
+                  >
+                    {c.label}
+                  </button>
+                ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setClassifyOpen(false)}
+              className="mt-2 w-full py-3 text-[17px] text-stone-600"
+            >
+              取消
+            </button>
+          </div>
+        </Sheet>
+      )}
 
       {banner && <p className={cn("flex shrink-0 items-center justify-center gap-1.5 px-3 py-2 text-center text-[15px] font-medium", banner.className)}>
         {question?.status === "resolved" && <CircleCheckBig className="size-4" />}{banner.text}

@@ -6,7 +6,6 @@ import { useSearchParams } from "next/navigation";
 import { callApp, isInTownPass, type ReportDraft } from "@/lib/townpass-bridge";
 import {
   ApiError,
-  CATEGORY_LABEL,
   clearToken,
   createQuestion,
   getToken,
@@ -21,7 +20,8 @@ export default function NewPostForm() {
   const searchParams = useSearchParams();
   const isAppReport = searchParams.get("source") === "app-report";
 
-  const [category, setCategory] = useState<Category>("other");
+  // 一般發文不選分類，交給後端自動分類；App 的問題回報固定是 app_usage
+  const [category, setCategory] = useState<Category | undefined>(undefined);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [image, setImage] = useState<string | null>(null); // data URL
@@ -137,14 +137,6 @@ export default function NewPostForm() {
           沒有讀到回報草稿（可能已讀取過、超過 10 分鐘，或不在 App 內開啟），請手動填寫。
         </p>
       )}
-
-      <select value={category} onChange={(e) => setCategory(e.target.value as Category)} className={inputClass}>
-        {Object.entries(CATEGORY_LABEL).map(([value, label]) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </select>
 
       <input
         value={title}

@@ -89,7 +89,8 @@ export type CreateQuestion = {
   body?: string;
   media_ids?: string[];
   language: string;
-  category: Category;
+  /** 可不傳：後端會自動分類，不確定時為 uncategorized */
+  category?: Category;
   assistance_mode: "online" | "onsite" | "either";
   context?: {
     service_id: string;

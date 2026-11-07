@@ -195,10 +195,11 @@ export function createHttpApi(
 
     listMyQuestions: () => all<QuestionSummary>("/questions?author=me&sort=latest"),
 
-    async listForumQuestions() {
+    async listForumQuestions(filter) {
+      const category = filter?.category ? `&category=${encodeURIComponent(filter.category)}` : "";
       const env = await request<QuestionSummary[]>(
         "GET",
-        `/questions?scope=global&sort=latest&limit=${FORUM_LIMIT}`,
+        `/questions?scope=global&sort=latest&limit=${FORUM_LIMIT}${category}`,
       );
       const list = env?.data ?? [];
       // 列表只有標題，內文要看詳情；被撤回（404）的就略過
@@ -213,6 +214,11 @@ export function createHttpApi(
     },
 
     getQuestion: (id) => data<QuestionDetail>("GET", `/questions/${encodeURIComponent(id)}`),
+
+    setQuestionCategory: (questionId, category) =>
+      data<QuestionDetail>("PUT", `/questions/${encodeURIComponent(questionId)}/category`, {
+        category,
+      }),
 
     createQuestion: (req) => data<QuestionDetail>("POST", "/questions", req),
 
@@ -230,19 +236,9 @@ export function createHttpApi(
       await request("DELETE", `/answers/${encodeURIComponent(answerId)}`);
     },
 
-    async resolveQuestion(questionId) {
-      try {
-        return await data<QuestionDetail>(
-          "POST",
-          `/questions/${encodeURIComponent(questionId)}/resolve`,
-        );
-      } catch (error) {
-        if (error instanceof ApiError && [404, 405, 501].includes(error.status)) {
-          throw new ApiError(501, "RESOLVE_NOT_SUPPORTED", "後端尚未支援直接標記為已解決");
-        }
-        throw error;
-      }
-    },
+    // 已解決的問題再標一次會回 409 INVALID_STATE；404 表示問題已撤回
+    resolveQuestion: (questionId) =>
+      data<QuestionDetail>("POST", `/questions/${encodeURIComponent(questionId)}/resolve`),
 
     vote: (answerId, value) =>
       data<VoteSummary>("PUT", `/answers/${encodeURIComponent(answerId)}/vote`, { value }),

@@ -110,7 +110,8 @@ export type CreateQuestionRequest = {
   body?: string;
   media_ids?: string[];
   language: string;
-  category: CategoryId;
+  /** 可不傳：後端會自動分類，不確定時為 uncategorized */
+  category?: CategoryId;
   assistance_mode: AssistanceMode;
   location_sharing?: LocationSharing;
   /** location_sharing 不是 off 時必填 */
@@ -154,7 +155,12 @@ export type AskerApi = {
   /** GET /questions?author=me */
   listMyQuestions(): Promise<QuestionSummary[]>;
   /** 公開討論串列表；目前只由 mock 資料提供 */
-  listForumQuestions(): Promise<QuestionDetail[]>;
+  listForumQuestions(filter?: { category?: CategoryId }): Promise<QuestionDetail[]>;
+  /**
+   * 志工分類：PUT /questions/{id}/category。
+   * 只能改未分類的問題（已分類回 409 INVALID_STATE）；不能送 uncategorized（400）。
+   */
+  setQuestionCategory(questionId: string, category: CategoryId): Promise<QuestionDetail>;
   getQuestion(id: string): Promise<QuestionDetail>;
   createQuestion(req: CreateQuestionRequest): Promise<QuestionDetail>;
   deleteQuestion(id: string): Promise<void>;

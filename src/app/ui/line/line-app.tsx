@@ -23,7 +23,6 @@ import {
 } from "./api/types";
 import { ChatRoom } from "./chat-room";
 import { ChatList, type ChatListActions } from "./chat-list";
-import { answerPreview } from "./format";
 import { BottomNav, HomeTab } from "./other-tabs";
 import { unreadCount, type Notify, type Outgoing, type QuestionPrefs, type Tab } from "./types";
 
@@ -38,6 +37,8 @@ const noopSubscribe = () => () => {};
  * 範例資料的時間是相對於「現在」產生的，而 Cache Components 會預先渲染
  * Client Component，所以整個 App 只在瀏覽器端掛載，伺服器端只輸出外框。
  */
+const TAB_TITLE: Record<Tab, string> = { home: "主頁", chats: "聊天", forum: "討論串" };
+
 export default function LineApp() {
   const mounted = useSyncExternalStore(
     noopSubscribe,
@@ -198,6 +199,9 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
   const [me, setMe] = useState<Me | null>(null);
   const [questions, setQuestions] = useState<QuestionSummary[]>([]);
   const [forumQuestions, setForumQuestions] = useState<QuestionDetail[]>([]);
+  /** 討論串的篩選：全部，或只看等志工分類的 */
+  const [forumFilter, setForumFilter] = useState<"all" | "uncategorized">("all");
+  const forumFilterRef = useRef<"all" | "uncategorized">("all");
   const [details, setDetails] = useState<Record<string, QuestionDetail>>({});
   const [answers, setAnswers] = useState<Record<string, Answer[]>>({});
   const [prefs, setPrefs] = useState<Record<string, QuestionPrefs>>({});
@@ -227,6 +231,15 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
     (text, tone = "info") => setToast({ text, tone, id: Date.now() }),
     [],
   );
+
+  // 分頁名稱不放在畫面上，改顯示在網頁標題
+  useEffect(() => {
+    const previous = document.title;
+    document.title = TAB_TITLE[tab];
+    return () => {
+      document.title = previous;
+    };
+  }, [tab]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
@@ -266,7 +279,9 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
   }, [api]);
 
   const loadForumQuestions = useCallback(async () => {
-    const list = await api.listForumQuestions();
+    const list = await api.listForumQuestions(
+      forumFilterRef.current === "uncategorized" ? { category: "uncategorized" } : undefined,
+    );
     setForumQuestions(list);
     return list;
   }, [api]);
@@ -445,7 +460,8 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           body,
           media_ids: mediaIds,
           language: "zh-TW",
-          category: active.category,
+          // 沒選分類就不傳，後端會自動分類（看不出來時為 uncategorized）
+          category: active.category === "uncategorized" ? undefined : active.category,
           assistance_mode: "online",
           location_sharing: locationSharing,
           location,
@@ -454,7 +470,7 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
         setDetails((prev) => ({ ...prev, [q.id]: q }));
         setAnswers((prev) => ({ ...prev, [q.id]: [] }));
         setPrefs((prev) => ({ ...prev, [q.id]: newPrefs(q.created_at) }));
-        setActive((a) => (a ? { ...a, id: q.id } : a));
+        setActive((a) => (a ? { ...a, id: q.id, category: q.category } : a));
         await loadSummaries();
         await loadForumQuestions();
         notify("問題已送出，有人回答時會通知您");
@@ -476,6 +492,27 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
     } finally {
       setSending(false);
     }
+  }
+
+  /** 志工分類：只能改未分類的問題 */
+  async function classify(id: string, category: CategoryId) {
+    try {
+      const detail = await api.setQuestionCategory(id, category);
+      setDetails((prev) => ({ ...prev, [id]: detail }));
+      setActive((a) => (a && a.id === id ? { ...a, category: detail.category } : a));
+      await loadForumQuestions();
+      notify("謝謝您幫忙分類！");
+    } catch (e) {
+      notify(errorMessage(e), "error");
+      // 可能已經被別人分類了：重抓一次
+      loadQuestion(id).catch(() => {});
+    }
+  }
+
+  function changeForumFilter(filter: "all" | "uncategorized") {
+    forumFilterRef.current = filter;
+    setForumFilter(filter);
+    loadForumQuestions().catch((e) => notify(errorMessage(e), "error"));
   }
 
   async function resolve(id: string) {
@@ -523,23 +560,6 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
     }
   }
 
-  async function changeNickname(name: string) {
-    try {
-      setMe(await api.updateMe({ nickname: name }));
-      try {
-        localStorage.setItem(NICK_KEY, name);
-      } catch {
-        // 忽略：只是記住暱稱的便利功能
-      }
-      await loadAll();
-      await loadForumQuestions();
-      return true;
-    } catch (e) {
-      notify(errorMessage(e), "error");
-      return false;
-    }
-  }
-
   const updatePrefs = (id: string, patch: (p: QuestionPrefs) => Partial<QuestionPrefs>) =>
     setPrefs((prev) => {
       const p = prev[id] ?? newPrefs(new Date().toISOString());
@@ -557,7 +577,6 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
   const meId = me?.id ?? "";
   const unreadOf = (id: string) => unreadCount(answers[id], meId, prefs[id]?.lastSeenAt);
   const totalUnread = questions.reduce((sum, q) => sum + unreadOf(q.id), 0);
-  const resolved = questions.filter((q) => q.status === "resolved").length;
   const activeQuestion = active?.id ? details[active.id] ?? forumQuestions.find((q) => q.id === active.id) : null;
 
   function endSwipe(event: TouchEvent<HTMLDivElement>) {
@@ -581,29 +600,14 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
       >
         {tab === "home" ? (
           <HomeTab
-            me={me}
-            stats={{
-              total: questions.length,
-              waiting: questions.length - resolved,
-              resolved,
-            }}
-            onNicknameChange={changeNickname}
+            questions={questions.map((q) => ({
+              q,
+              unread: unreadOf(q.id),
+              answered: (answers[q.id] ?? []).filter((a) => a.author.id !== meId).length,
+            }))}
             onAsk={startDraft}
-            onShowChats={() => setTab("chats")}
-            recent={questions.slice(0, 3).map((q) => {
-              const last = answers[q.id]?.at(-1);
-              return {
-                q,
-                unread: unreadOf(q.id),
-                preview:
-                  q.status === "resolved"
-                    ? "已解決"
-                    : last
-                      ? answerPreview(last, meId)
-                      : "等待熱心的人回答",
-              };
-            })}
             onOpen={openQuestion}
+            onShowChats={() => setTab("chats")}
             note={note}
           />
         ) : tab === "chats" ? (
@@ -625,6 +629,8 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
             loading={loading}
             onAsk={startDraft}
             onOpen={openQuestion}
+            filter={forumFilter}
+            onFilterChange={changeForumFilter}
           />
         )}
       </div>
@@ -647,6 +653,7 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           locationSharing={active.locationSharing}
           onLocationSharingChange={(value) => setActive((current) => current ? { ...current, locationSharing: value } : current)}
           onResolve={() => active.id ? resolve(active.id) : Promise.resolve()}
+          onClassify={(category) => (active.id ? classify(active.id, category) : Promise.resolve())}
           onToggleLike={toggleLike}
           onDeleteAnswer={deleteAnswer}
           onWithdraw={() => (active.id ? withdraw(active.id) : Promise.resolve())}
