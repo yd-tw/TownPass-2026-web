@@ -53,11 +53,21 @@ export default function LineApp({ ask = false }: { ask?: boolean }) {
       {mounted ? (
         <LineAppInner ask={ask} />
       ) : (
-        <div className="flex flex-1 items-center justify-center">
-          <span className="size-8 animate-spin rounded-full border-3 border-tp-primary-500 border-t-transparent" />
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
+          <Connecting />
         </div>
       )}
     </div>
+  );
+}
+
+/** 掛載前和連線中用同一個畫面，切換時才不會跳一下 */
+function Connecting() {
+  return (
+    <>
+      <span className="size-10 animate-spin rounded-full border-4 border-tp-primary-500 border-t-transparent" />
+      <p className="text-[17px] text-tp-gray-700">連線中…</p>
+    </>
   );
 }
 
@@ -106,14 +116,18 @@ type Active = {
   category: CategoryId;
   locationSharing: "off" | "approximate";
   /** 從 App 問題回報開啟的新問題：送出時附上裝置資訊 */
-  report?: { id: string; context: ReportDraft["context"]; media: PendingMedia[] };
+  report?: Report;
+  /** 一開頁面就打開的聊天室（/new）：不播放滑入動畫，避免閃一下 */
+  instant?: boolean;
 };
+
+type Report = { id: string; context: ReportDraft["context"]; media: PendingMedia[] };
 
 /** App 問題回報的提示：截圖已放進待傳附件 */
 const REPORT_HINT = "已附上剛才的 App 畫面截圖，個資已自動遮蔽，送出前請再確認\n請說說遇到什麼問題，可以打字或按麥克風錄音";
 
 /** 問題回報的 context：裝置資訊放 extra，只有發問者本人與管理員看得到 */
-function reportContext(report: NonNullable<Active["report"]>) {
+function reportContext(report: Report) {
   return {
     service_id: "townpass-app",
     service_name: "Town Pass",
@@ -125,7 +139,7 @@ function reportContext(report: NonNullable<Active["report"]>) {
 }
 
 /** 讀取 App 的問題回報草稿，截圖轉成待傳附件；沒有草稿時回傳 null */
-async function readReportDraft(): Promise<Active["report"] | null> {
+async function readReportDraft(): Promise<Report | null> {
   const draft = await callApp<ReportDraft | null>("report_draft");
   if (!draft) return null; // 已讀過、逾時（10 分鐘）或網域不符
   const media: PendingMedia[] = [];
@@ -140,10 +154,23 @@ async function readReportDraft(): Promise<Active["report"] | null> {
   return { id: draft.id, context: draft.context, media };
 }
 
+/**
+ * App 問題回報開啟 /new?source=app-report 時讀草稿；其他情況回傳 null。
+ * 讀完把 source 從網址移除，重新整理時才不會再讀（草稿本來就只能讀一次）。
+ */
+function readReportFromUrl(): Promise<Report | null> {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("source") !== "app-report") return Promise.resolve(null);
+  url.searchParams.delete("source");
+  window.history.replaceState(window.history.state, "", url);
+  if (!isInTownPass()) return Promise.resolve(null);
+  return readReportDraft().catch(() => null);
+}
+
 type Connection =
   | { status: "connecting" }
   | { status: "error"; message: string }
-  | { status: "ready"; api: AskerApi; note: string | null };
+  | { status: "ready"; api: AskerApi; note: string | null; report: Report | null };
 
 /**
  * 先連上後端再顯示畫面。
@@ -153,11 +180,16 @@ type Connection =
 function LineAppInner({ ask }: { ask: boolean }) {
   const [attempt, setAttempt] = useState(0);
   const [conn, setConn] = useState<Connection>({ status: "connecting" });
+  // 問題回報草稿和連線後端同時進行，聊天室出現時截圖已經備好，不用再重新掛載一次。
+  // 草稿只能讀一次：存在 ref，Strict Mode 重跑 effect 或「重新連線」都沿用同一份。
+  const reportRef = useRef<Promise<Report | null> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     let created: AskerApi | null = null;
     const demo = new URLSearchParams(window.location.search).get("demo");
+    reportRef.current ??= readReportFromUrl();
+    const report = reportRef.current;
     Promise.resolve()
       .then(async () => {
         if (demo === "mock" || demo === "crowd") {
@@ -172,10 +204,14 @@ function LineAppInner({ ask }: { ask: boolean }) {
           note: identity.isWebTest ? "瀏覽器測試帳號：目前不是在城市通 App 裡開啟" : null,
         };
       })
-      .then(({ api, note }) => {
+      .then(async ({ api, note }) => {
         created = api;
-        if (cancelled) api.close();
-        else setConn({ status: "ready", api, note });
+        if (cancelled) {
+          api.close();
+          return;
+        }
+        const draft = await report;
+        if (!cancelled) setConn({ status: "ready", api, note, report: draft });
       })
       .catch((e: unknown) => {
         if (!cancelled) {
@@ -192,15 +228,12 @@ function LineAppInner({ ask }: { ask: boolean }) {
   }, [attempt]);
 
   if (conn.status === "ready") {
-    return <LineAppConnected key={attempt} api={conn.api} note={conn.note} ask={ask} />;
+    return <LineAppConnected key={attempt} api={conn.api} note={conn.note} ask={ask} report={conn.report} />;
   }
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
       {conn.status === "connecting" ? (
-        <>
-          <span className="size-10 animate-spin rounded-full border-4 border-tp-primary-500 border-t-transparent" />
-          <p className="text-[17px] text-tp-gray-700">連線中…</p>
-        </>
+        <Connecting />
       ) : (
         <>
           <p className="text-[19px] font-bold text-tp-gray-900">暫時連不上</p>
@@ -224,7 +257,17 @@ function LineAppInner({ ask }: { ask: boolean }) {
   );
 }
 
-function LineAppConnected({ api, note, ask }: { api: AskerApi; note: string | null; ask: boolean }) {
+function LineAppConnected({
+  api,
+  note,
+  ask,
+  report,
+}: {
+  api: AskerApi;
+  note: string | null;
+  ask: boolean;
+  report: Report | null;
+}) {
   const [me, setMe] = useState<Me | null>(null);
   const [meta, setMeta] = useState<Meta>(META);
   const [questions, setQuestions] = useState<QuestionSummary[]>([]);
@@ -243,11 +286,15 @@ function LineAppConnected({ api, note, ask }: { api: AskerApi; note: string | nu
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(() => Date.now());
   const [tab, setTab] = useState<Tab>("home");
-  const [active, setActive] = useState<Active | null>(() =>
-    ask || new URLSearchParams(window.location.search).get("mode") === "ask"
-      ?{ key: makeId(), id: null, category: "uncategorized", locationSharing: "approximate" }
-      : null,
-  );
+  const [active, setActive] = useState<Active | null>(() => {
+    // 問題回報：截圖已在 LineAppInner 讀好，聊天室第一次出現就帶著
+    if (report) {
+      return { key: makeId(), id: null, category: "app_usage", locationSharing: "approximate", report, instant: true };
+    }
+    return ask || new URLSearchParams(window.location.search).get("mode") === "ask"
+      ? { key: makeId(), id: null, category: "uncategorized", locationSharing: "approximate", instant: true }
+      : null;
+  });
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState<{
@@ -446,38 +493,6 @@ function LineAppConnected({ api, note, ask }: { api: AskerApi; note: string | nu
       })
       .catch((e) => notify(errorMessage(e), "error"));
   }, [loading, loadQuestion, loadAnswers, notify]);
-
-  // App 問題回報開啟 /new?source=app-report：讀一次草稿，截圖放進新問題的待傳附件。
-  // 草稿只能讀一次，Strict Mode 下 effect 會跑兩次，用 ref 防止第二次讀到 null。
-  const reportRequested = useRef(false);
-  useEffect(() => {
-    if (reportRequested.current) return;
-    reportRequested.current = true;
-    const url = new URL(window.location.href);
-    if (url.searchParams.get("source") !== "app-report") return;
-    // 移除參數，重新整理時才不會再讀一次
-    url.searchParams.delete("source");
-    window.history.replaceState(window.history.state, "", url);
-    if (!isInTownPass()) return;
-
-    readReportDraft()
-      .then((report) => {
-        if (!report) return;
-        // 換新的 key 讓聊天室重新掛載，帶入截圖；位置分享沿用目前設定（預設概略位置）
-        setActive((current) =>
-          current?.id
-            ? current
-            : {
-                key: makeId(),
-                id: null,
-                category: "app_usage",
-                locationSharing: current?.locationSharing ?? "approximate",
-                report,
-              },
-        );
-      })
-      .catch(() => notify("沒有讀到 App 的截圖，請直接描述遇到的問題", "error"));
-  }, [notify]);
 
   // 只訂閱自己的問題和正在看的問題（question:subscribe）
   const activeId = active?.id ?? null;
@@ -744,6 +759,7 @@ function LineAppConnected({ api, note, ask }: { api: AskerApi; note: string | nu
           onDeleteAnswer={deleteAnswer}
           onWithdraw={() => (active.id ? withdraw(active.id) : Promise.resolve())}
           notify={notify}
+          animateIn={!active.instant}
           initialMedia={active.report?.media}
           draftHint={active.report ? REPORT_HINT : undefined}
         />

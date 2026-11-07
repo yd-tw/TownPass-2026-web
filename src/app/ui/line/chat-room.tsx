@@ -91,6 +91,8 @@ export type ChatRoomProps = {
   notify: Notify;
   locationSharing: "off" | "approximate";
   onLocationSharingChange: (value: "off" | "approximate") => void;
+  /** 打開時從右邊滑入；一開頁面就顯示的聊天室（/new）設 false，避免閃一下 */
+  animateIn?: boolean;
   /** 新問題預先放好的待傳附件（App 問題回報的截圖） */
   initialMedia?: PendingMedia[];
   /** 新問題上方的提示，取代預設文字 */
@@ -402,7 +404,7 @@ export function ChatRoom(props: ChatRoomProps) {
   return (
     <div
       ref={rootRef}
-      className="absolute inset-0 z-20 flex flex-col animate-in duration-200 slide-in-from-right"
+      className={`absolute inset-0 z-20 flex flex-col ${props.animateIn === false ? "" : "animate-in duration-200 slide-in-from-right"}`}
       style={{ background: CHAT_BG }}
       onTouchStart={(event) => { swipeStart.current = { x: event.touches[0].clientX, y: event.touches[0].clientY }; }}
       onTouchEnd={(event) => {
