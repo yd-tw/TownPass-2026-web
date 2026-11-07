@@ -8,13 +8,13 @@ const PALETTE = [
   "#468d9b",
   "#356c77",
   "#22474e",
-  "#ad7b2b",
+  "#b07d2c",
   "#738995",
   "#5e6d76",
   "#e6692c",
   "#ae501f",
   "#475259",
-  "#c2332f",
+  "#e5464b",
 ];
 
 function hash(s: string) {
@@ -106,7 +106,7 @@ export function QuestionAvatar({
     return (
       <span
         aria-hidden
-        className="inline-flex shrink-0 items-center justify-center rounded-full bg-tp-primary-700 text-white"
+        className="inline-flex shrink-0 items-center justify-center rounded-full bg-tp-primary-500 text-white"
         style={{ width: size, height: size }}
       >
         <Mic style={{ width: size * 0.48, height: size * 0.48 }} />

@@ -137,67 +137,61 @@
 }
 
 /*
- * 城市通（Town Pass）配色，取自官方開源專案 taipei-doit/TownPass 的 lib/util/tp_colors.dart
- * （Figma：Town Pass Open Source Gov Mobile App UI Kit and Design System）。
- * 長輩友善的用法：
- * - 白字的實心按鈕、強調文字用 primary-700（對白底 5.9:1）；品牌色 primary-500 對白底只有 2.4:1，
- *   只拿來當淡色底、外框、進度圈等不承載文字的地方
- * - 一般文字用 gray-600 以上（對白底 5.3:1）
+ * 城市通（Town Pass）官方配色，取自官方網頁微服務範本 taipei-doit/TownPass-Services 的 tailwind.config.js
+ * （城市通文件 https://townpass.taipei/docs/ 的微服務都用這套；App 端 lib/util/tp_colors.dart 同一套色階）。
+ * 官方用法：
+ * - 主要按鈕：bg-primary-500 白色粗體字；強調文字、連結、選中狀態：text-primary-500
+ * - 淡色底：primary-50、primary-100
+ * - 頁面底色 gray-50、卡片白色、分隔線 gray-200
+ * - 錯誤：warn-200；成功：success
+ * 名稱：官方的 grey 在這裡叫 gray
  */
 @theme {
-  --color-tp-primary-50: #EDF8FA;
-  --color-tp-primary-100: #DBF1F5;
-  --color-tp-primary-200: #B4E2EA;
-  --color-tp-primary-300: #93D4DF;
-  --color-tp-primary-400: #71C5D5;
-  --color-tp-primary-500: #5AB4C5;
-  --color-tp-primary-600: #468D9B;
-  --color-tp-primary-700: #356C77;
-  --color-tp-primary-800: #22474E;
+  --color-tp-primary-50: #edf8fa;
+  --color-tp-primary-100: #dbf1f5;
+  --color-tp-primary-200: #b4e2ea;
+  --color-tp-primary-300: #93d4df;
+  --color-tp-primary-400: #71c5d5;
+  --color-tp-primary-500: #2eb6c7;
+  --color-tp-primary-600: #468d9b;
+  --color-tp-primary-700: #356c77;
+  --color-tp-primary-800: #22474e;
   --color-tp-primary-900: #112629;
   --color-tp-primary-950: #081315;
-  --color-tp-secondary-50: #FDF8ED;
-  --color-tp-secondary-100: #FCF2DF;
-  --color-tp-secondary-200: #F8E3BC;
-  --color-tp-secondary-300: #F4D69E;
-  --color-tp-secondary-400: #F0C87C;
-  --color-tp-secondary-500: #F5BA4B;
-  --color-tp-secondary-600: #E7A43C;
-  --color-tp-secondary-700: #AD7B2B;
-  --color-tp-secondary-800: #74521B;
-  --color-tp-secondary-900: #3C2B0B;
-  --color-tp-secondary-950: #1C1304;
-  --color-tp-gray-50: #F1F3F4;
-  --color-tp-gray-100: #E3E7E9;
-  --color-tp-gray-200: #CAD1D5;
-  --color-tp-gray-300: #ADB8BE;
-  --color-tp-gray-400: #91A0A8;
+  --color-tp-secondary-50: #fdf8ed;
+  --color-tp-secondary-100: #fcf2df;
+  --color-tp-secondary-200: #f8e3bc;
+  --color-tp-secondary-300: #f4d69e;
+  --color-tp-secondary-400: #edbb60;
+  --color-tp-secondary-500: #f5ba4b;
+  --color-tp-secondary-600: #e7a43c;
+  --color-tp-secondary-700: #b07d2c;
+  --color-tp-secondary-800: #74521b;
+  --color-tp-secondary-900: #3c2b0b;
+  --color-tp-secondary-950: #1c1304;
+  --color-tp-gray-50: #f1f3f4;
+  --color-tp-gray-100: #e3e7e9;
+  --color-tp-gray-200: #cad1d5;
+  --color-tp-gray-300: #adb8be;
+  --color-tp-gray-400: #91a0a8;
   --color-tp-gray-500: #738995;
-  --color-tp-gray-600: #5E6D76;
+  --color-tp-gray-600: #5e6d76;
   --color-tp-gray-700: #475259;
-  --color-tp-gray-800: #30383D;
-  --color-tp-gray-900: #171B1D;
-  --color-tp-gray-950: #0B0D0E;
-  --color-tp-red-50: #FAEEEE;
-  --color-tp-red-100: #F5DCDD;
-  --color-tp-red-200: #EBB6B6;
-  --color-tp-red-300: #E29494;
-  --color-tp-red-400: #D45251;
-  --color-tp-red-500: #D45251;
-  --color-tp-red-600: #C2332F;
-  --color-tp-red-700: #912522;
-  --color-tp-red-800: #5F1715;
-  --color-tp-red-900: #310B0B;
-  --color-tp-red-950: #180505;
-  --color-tp-orange-50: #FDF3EC;
-  --color-tp-orange-100: #FBE7D9;
-  --color-tp-orange-200: #F7CFB2;
-  --color-tp-orange-300: #F4B992;
-  --color-tp-orange-400: #F1A26D;
-  --color-tp-orange-500: #FD853A;
-  --color-tp-orange-600: #E6692C;
-  --color-tp-orange-700: #AE501F;
+  --color-tp-gray-800: #30383d;
+  --color-tp-gray-900: #171b1d;
+  --color-tp-gray-950: #080d0e;
+  --color-tp-orange-50: #fdf3ec;
+  --color-tp-orange-100: #fbe7d9;
+  --color-tp-orange-200: #f7cfb2;
+  --color-tp-orange-300: #f4b992;
+  --color-tp-orange-400: #f1a26d;
+  --color-tp-orange-500: #fd853a;
+  --color-tp-orange-600: #e6692c;
+  --color-tp-orange-700: #ae501f;
   --color-tp-orange-800: #713311;
-  --color-tp-orange-900: #391A06;
-  --color-tp-orange-950: #1C0C02;
+  --color-tp-orange-900: #391a06;
+  --color-tp-orange-950: #1c0c02;
+  --color-tp-warn-100: #ea686f;
+  --color-tp-warn-200: #e5464b;
+  --color-tp-success: #66aa00;
 }

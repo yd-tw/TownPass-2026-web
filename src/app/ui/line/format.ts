@@ -61,6 +61,7 @@ export function answerPreview(a: Answer, meId: string) {
   const who = a.author.id === meId ? "你" : a.author.nickname;
   if (a.body) return `${who}：${a.body}`;
   if (a.media.some((m) => m.kind === "audio")) return `${who}傳送了語音訊息`;
+  if (a.media.some((m) => m.kind === "video")) return `${who}傳送了影片`;
   if (a.media.length > 0) return `${who}傳送了照片`;
   return `${who}的回答待確認個資，暫時隱藏`;
 }

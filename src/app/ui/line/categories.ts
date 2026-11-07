@@ -16,8 +16,8 @@ import type { CategoryId } from "./api/types";
 export const CATEGORY_STYLE: Record<CategoryId, { icon: LucideIcon; color: string }> = {
   map_navigation: { icon: MapPin, color: "#468d9b" },
   admin_procedure: { icon: Landmark, color: "#22474e" },
-  document_contract: { icon: FileText, color: "#ad7b2b" },
-  scam_check: { icon: ShieldAlert, color: "#c2332f" },
+  document_contract: { icon: FileText, color: "#b07d2c" },
+  scam_check: { icon: ShieldAlert, color: "#e5464b" },
   app_usage: { icon: Smartphone, color: "#e6692c" },
   language: { icon: Languages, color: "#356c77" },
   other: { icon: CircleHelp, color: "#738995" },

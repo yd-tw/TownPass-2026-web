@@ -1,6 +1,6 @@
 "use client";
 
-import { BellOff, Pin, Plus, Search, X } from "lucide-react";
+import { Plus, Search, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { Answer, CategoryId, QuestionDetail, QuestionSummary } from "./api/types";
@@ -8,31 +8,24 @@ import { META } from "./api/mock-api";
 import { QuestionAvatar } from "./avatar";
 import { categoryLabel } from "./categories";
 import { answerPreview, formatListTime } from "./format";
-import { unreadCount, type QuestionPrefs } from "./types";
 import { useBackLayer } from "./use-back-layer";
-import { useLongPress } from "./use-long-press";
 
 /*
  * 長輩版的列表刻意只留「搜尋」和「我要發問」：
- * 篩選標籤、排序、全部已讀、隱藏問題對只問過幾題的人來說都是干擾，
- * 而且隱藏後沒有地方找回來。釘選、關閉提醒、標為已讀收在長按選單裡（同 LINE）。
+ * 篩選標籤、排序、隱藏問題對只問過幾題的人來說都是干擾，
+ * 而且隱藏後沒有地方找回來。最近有動靜的問題排在最上面。
  */
 
 export type ChatListActions = {
   onOpen: (id: string) => void;
   onAsk: () => void;
-  onTogglePin: (id: string) => void;
-  onToggleMute: (id: string) => void;
-  onMarkRead: (id: string) => void;
 };
 
 type Row = {
   q: QuestionSummary;
   body: string;
-  prefs: QuestionPrefs;
   last: Answer | undefined;
   lastAt: string;
-  unread: number;
   /** 群組人數：自己＋回答過的人 */
   members: number;
 };
@@ -41,7 +34,6 @@ export function ChatList({
   questions,
   details,
   answers,
-  prefs,
   meId,
   now,
   loading,
@@ -50,33 +42,24 @@ export function ChatList({
   questions: QuestionSummary[];
   details: Record<string, QuestionDetail>;
   answers: Record<string, Answer[]>;
-  prefs: Record<string, QuestionPrefs>;
   meId: string;
   now: number;
   loading: boolean;
   actions: ChatListActions;
 }) {
   const [query, setQuery] = useState("");
-  const [sheetId, setSheetId] = useState<string | null>(null);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return questions
       .map((question): Row => {
-        const p = prefs[question.id] ?? {
-          pinned: false,
-          muted: false,
-          lastSeenAt: question.created_at,
-        };
         const list = answers[question.id] ?? [];
         const last = list.at(-1);
         return {
           q: question,
           body: details[question.id]?.body ?? (question.has_audio ? "（語音提問）" : "（附件提問）"),
-          prefs: p,
           last,
           lastAt: last?.created_at ?? question.created_at,
-          unread: unreadCount(list, meId, p.lastSeenAt),
           members:
             1 +
             new Set(list.filter((a) => a.author.id !== meId).map((a) => a.author.id))
@@ -91,13 +74,8 @@ export function ChatList({
           (a.body ?? "").toLowerCase().includes(q),
         );
       })
-      .sort((a, b) => {
-        if (a.prefs.pinned !== b.prefs.pinned) return a.prefs.pinned ? -1 : 1;
-        return b.lastAt.localeCompare(a.lastAt);
-      });
-  }, [questions, details, answers, prefs, meId, query]);
-
-  const sheetRow = rows.find((r) => r.q.id === sheetId);
+      .sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+  }, [questions, details, answers, meId, query]);
 
   return (
     <div className="relative flex h-full flex-col bg-tp-gray-50">
@@ -138,7 +116,7 @@ export function ChatList({
               <button
                 type="button"
                 onClick={actions.onAsk}
-                className="rounded-2xl bg-tp-primary-700 px-8 py-4 text-[17px] font-bold text-white"
+                className="rounded-2xl bg-tp-primary-500 px-8 py-4 text-[17px] font-bold text-white"
               >
                 我要發問
               </button>
@@ -152,7 +130,6 @@ export function ChatList({
             meId={meId}
             now={now}
             onOpen={() => actions.onOpen(row.q.id)}
-            onMenu={() => setSheetId(row.q.id)}
           />
         ))}
       </ul>
@@ -161,19 +138,11 @@ export function ChatList({
       <button
         type="button"
         onClick={actions.onAsk}
-        className="absolute right-4 bottom-4 z-20 flex h-14 items-center gap-2 rounded-full bg-tp-primary-700 pr-6 pl-5 text-[18px] font-bold text-white shadow-lg ring-1 ring-black/5 active:bg-tp-primary-800"
+        className="absolute right-4 bottom-4 z-20 flex h-14 items-center gap-2 rounded-full bg-tp-primary-500 pr-6 pl-5 text-[18px] font-bold text-white shadow-lg ring-1 ring-black/5 active:bg-tp-primary-600"
       >
         <Plus className="size-6" strokeWidth={2.8} />
         我要發問
       </button>
-
-      {sheetRow && (
-        <RowActionSheet
-          row={sheetRow}
-          onClose={() => setSheetId(null)}
-          actions={actions}
-        />
-      )}
     </div>
   );
 }
@@ -201,24 +170,20 @@ function QuestionRow({
   meId,
   now,
   onOpen,
-  onMenu,
 }: {
   row: Row;
   meId: string;
   now: number;
   onOpen: () => void;
-  onMenu: () => void;
 }) {
-  const press = useLongPress(onMenu);
-  const { q, prefs, last, unread } = row;
+  const { q, last } = row;
   const preview = last ? answerPreview(last, meId) : "已送出，等待熱心的人回答";
   return (
     <li>
       <button
         type="button"
         onClick={onOpen}
-        {...press}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors select-none [-webkit-touch-callout:none] hover:bg-tp-gray-100/40 active:bg-tp-gray-100/60"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-tp-gray-100/40 active:bg-tp-gray-100/60"
       >
         <QuestionAvatar q={q} size={40} />
         <div className="min-w-0 flex-1">
@@ -231,9 +196,6 @@ function QuestionRow({
                 ({row.members})
               </span>
             )}
-            {prefs.muted && (
-              <BellOff className="size-4 shrink-0 text-tp-gray-600" aria-label="已關閉提醒" />
-            )}
           </div>
           <div className="mt-0.5 flex items-center gap-1.5">
             <StatusChip q={q} />
@@ -242,85 +204,11 @@ function QuestionRow({
             </p>
           </div>
         </div>
-        <div className="flex min-h-12 shrink-0 flex-col items-end justify-between self-stretch py-0.5 max-[300px]:min-h-0">
-          <span className="text-[12px] text-tp-gray-600 max-[300px]:hidden">
-            {formatListTime(Date.parse(row.lastAt), now)}
-          </span>
-          <div className="flex items-center gap-1">
-            {prefs.pinned && (
-              <Pin className="size-4 rotate-45 text-tp-gray-600" aria-label="已釘選" />
-            )}
-            {unread > 0 && (
-              <span
-                className={cn(
-                  "min-w-6 rounded-full px-1.5 text-center text-[12px] leading-6 font-bold text-white",
-                  prefs.muted ? "bg-tp-gray-400" : "bg-tp-primary-700",
-                )}
-                aria-label={`${unread} 則新回答`}
-              >
-                {unread > 99 ? "99+" : unread}
-              </span>
-            )}
-          </div>
-        </div>
+        <span className="shrink-0 self-start pt-0.5 text-[12px] text-tp-gray-600 max-[300px]:hidden">
+          {formatListTime(Date.parse(row.lastAt), now)}
+        </span>
       </button>
     </li>
-  );
-}
-
-function RowActionSheet({
-  row,
-  onClose,
-  actions,
-}: {
-  row: Row;
-  onClose: () => void;
-  actions: ChatListActions;
-}) {
-  const id = row.q.id;
-  const items: { label: string; run: () => void }[] = [
-    {
-      label: row.prefs.pinned ? "取消釘選" : "釘選在最上面",
-      run: () => actions.onTogglePin(id),
-    },
-    {
-      label: row.prefs.muted ? "開啟提醒" : "關閉提醒",
-      run: () => actions.onToggleMute(id),
-    },
-    ...(row.unread > 0
-      ? [{ label: "標為已讀", run: () => actions.onMarkRead(id) }]
-      : []),
-  ];
-  return (
-    <Sheet onClose={onClose}>
-      <p className="truncate px-4 pt-4 pb-2 text-center text-[15px] font-semibold text-tp-gray-600">
-        {row.body}
-      </p>
-      <ul className="divide-y divide-tp-gray-100/70">
-        {items.map((item) => (
-          <li key={item.label}>
-            <button
-              type="button"
-              onClick={() => {
-                item.run();
-                onClose();
-              }}
-              className="w-full px-4 py-4 text-[15px] text-tp-gray-950 hover:bg-tp-gray-100/40"
-            >
-              {item.label}
-            </button>
-          </li>
-        ))}
-      </ul>
-      <div className="h-2 bg-tp-gray-100/60" />
-      <button
-        type="button"
-        onClick={onClose}
-        className="w-full px-4 py-4 text-[15px] text-tp-gray-700 hover:bg-tp-gray-100/40"
-      >
-        取消
-      </button>
-    </Sheet>
   );
 }
 
@@ -362,7 +250,7 @@ export function AskSheet({
         <button
           type="button"
           onClick={() => onAsk(category)}
-          className="mt-4 w-full rounded-2xl bg-tp-primary-700 py-4 text-[20px] font-bold text-white shadow-sm active:bg-tp-primary-800"
+          className="mt-4 w-full rounded-2xl bg-tp-primary-500 py-4 text-[20px] font-bold text-white shadow-sm active:bg-tp-primary-600"
         >
           發問
         </button>

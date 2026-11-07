@@ -1,11 +1,8 @@
 "use client";
 
 import {
-  Bell,
-  BellOff,
   Camera,
   ChevronDown,
-  ChevronLeft,
   CircleCheckBig,
   Copy,
   Image as ImageIcon,
@@ -13,13 +10,13 @@ import {
   Menu,
   Mic,
   MoreHorizontal,
-  Pin,
   Plus,
   SendHorizontal,
   Tag,
   ThumbsUp,
   Trash2,
   Video,
+  Videotape,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -40,16 +37,39 @@ import { Avatar, QuestionAvatar } from "./avatar";
 import { categoryLabel } from "./categories";
 import { IconButton, Sheet } from "./chat-list";
 import { formatClock, formatDateDivider, isSameDay } from "./format";
-import { AudioBubble, ImageBubble, Lightbox, VoiceRecorder } from "./media";
-import type { Notify, Outgoing, QuestionPrefs } from "./types";
+import { AudioBubble, ImageBubble, Lightbox, VideoBubble, VoiceRecorder } from "./media";
+import type { Notify, Outgoing } from "./types";
 import { useBackLayer } from "./use-back-layer";
 import { useLongPress } from "./use-long-press";
 
 const CHAT_BG = "var(--color-tp-gray-100)";
-/** 自己的泡泡：淺橘底配深色字（像 LINE 的淺綠底黑字），對比約 11:1 */
+/** 自己的泡泡：城市通淺青色底配深色字（像 LINE 的淺綠底黑字） */
 const SELF_BUBBLE = "var(--color-tp-primary-200)";
 const GROUP_GAP = 5 * 60 * 1000;
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+/** iPhone 錄影是 MOV，Android 多半是 MP4 */
+const VIDEO_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
+const VIDEO_MAX_BYTES = META.limits.video_max_bytes ?? 30 * 1024 * 1024;
+const VIDEO_MAX_SECONDS = META.limits.video_max_seconds ?? 180;
+
+/** 讀影片長度；讀不到（部分 WebM 會是 Infinity）就回傳 undefined */
+function readVideoDuration(file: File): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    const done = (value: number | undefined) => {
+      window.clearTimeout(timer);
+      URL.revokeObjectURL(url);
+      resolve(value);
+    };
+    const timer = window.setTimeout(() => done(undefined), 8000);
+    video.preload = "metadata";
+    video.onloadedmetadata = () =>
+      done(Number.isFinite(video.duration) && video.duration > 0 ? video.duration : undefined);
+    video.onerror = () => done(undefined);
+    video.src = url;
+  });
+}
 
 export type ChatRoomProps = {
   meId: string;
@@ -57,11 +77,8 @@ export type ChatRoomProps = {
   question: QuestionDetail | null;
   category: CategoryId;
   answers: Answer[];
-  prefs: QuestionPrefs | null;
   now: number;
   sending: boolean;
-  unreadElsewhere: number;
-  unreadMarkerKey: string | null;
   onBack: () => void;
   onSend: (out: Outgoing) => Promise<boolean>;
   onResolve: () => Promise<void>;
@@ -70,8 +87,6 @@ export type ChatRoomProps = {
   onToggleLike: (answer: Answer) => Promise<void>;
   onDeleteAnswer: (answer: Answer) => void;
   onWithdraw: () => Promise<void>;
-  onToggleMute: () => void;
-  onTogglePin: () => void;
   notify: Notify;
   locationSharing: "off" | "approximate";
   onLocationSharingChange: (value: "off" | "approximate") => void;
@@ -92,7 +107,6 @@ type Post = {
 type Item =
   | { type: "date"; key: string; label: string }
   | { type: "note"; key: string; text: string }
-  | { type: "unread"; key: string }
   | { type: "post"; key: string; post: Post; first: boolean };
 
 type Confirm = { kind: "withdraw" };
@@ -105,6 +119,7 @@ export function ChatRoom(props: ChatRoomProps) {
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
+  const recordVideoRef = useRef<HTMLInputElement>(null);
 
   const [text, setText] = useState("");
   const [recording, setRecording] = useState(false);
@@ -187,12 +202,8 @@ export function ChatRoom(props: ChatRoomProps) {
               : `${question?.author.nickname ?? "有人"} 開了一個「${label}」的問題`,
         });
       }
-      if (p.key === props.unreadMarkerKey) {
-        out.push({ type: "unread", key: `unread-${p.key}` });
-      }
       const first =
         newDay ||
-        p.key === props.unreadMarkerKey ||
         !prev ||
         prev.self !== p.self ||
         prev.authorName !== p.authorName ||
@@ -201,7 +212,7 @@ export function ChatRoom(props: ChatRoomProps) {
       prev = p;
     }
     return out;
-  }, [posts, question, label, now, props.unreadMarkerKey, props.category]);
+  }, [posts, question, label, now, props.category]);
 
   // ---- 手機返回鍵：由上往下一層一層關 ----
   useBackLayer(true, props.onBack);
@@ -214,15 +225,7 @@ export function ChatRoom(props: ChatRoomProps) {
   // ---- 捲動 ----
   useLayoutEffect(() => {
     const list = listRef.current;
-    if (!list) return;
-    const marker = list.querySelector("[data-unread-marker]");
-    if (marker instanceof HTMLElement) {
-      list.scrollTop = marker.offsetTop - 80;
-      // 停在「以下為新回答」，不要被下面「捲到最底」的 effect 蓋掉
-      nearBottomRef.current = false;
-    } else {
-      list.scrollTop = list.scrollHeight;
-    }
+    if (list) list.scrollTop = list.scrollHeight;
   }, []);
 
   const lastKey = posts.at(-1)?.key;
@@ -292,19 +295,24 @@ export function ChatRoom(props: ChatRoomProps) {
     props.onSend({ kind: "images", files });
   }
 
-  function handlePickVideo(e: ChangeEvent<HTMLInputElement>) {
+  async function handlePickVideo(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    if (!["video/mp4", "video/webm", "video/quicktime"].includes(file.type)) {
+    if (!VIDEO_TYPES.includes(file.type.split(";")[0])) {
       notify("影片格式要是 MP4、WebM 或 MOV", "error");
       return;
     }
-    if (file.size > META.limits.video_max_bytes) {
-      notify("影片不能超過 30 MB", "error");
+    if (file.size > VIDEO_MAX_BYTES) {
+      notify(`影片太大了，不能超過 ${Math.round(VIDEO_MAX_BYTES / 1024 / 1024)} MB，請錄短一點`, "error");
       return;
     }
-    props.onSend({ kind: "video", file });
+    const duration = await readVideoDuration(file);
+    if (duration && duration > VIDEO_MAX_SECONDS) {
+      notify(`影片太長了，最長 ${Math.round(VIDEO_MAX_SECONDS / 60)} 分鐘，請錄短一點`, "error");
+      return;
+    }
+    props.onSend({ kind: "video", file, duration });
   }
 
   async function resolve() {
@@ -380,29 +388,13 @@ export function ChatRoom(props: ChatRoomProps) {
         if (dx < -85 && Math.abs(dx) > Math.abs(dy) * 1.4) props.onBack();
       }}
     >
-        <header className="flex h-16 shrink-0 items-center gap-1 pr-1 pl-0.5">
-          <button
-            type="button"
-            onClick={props.onBack}
-            aria-label="返回聊天列表"
-            className="flex h-12 min-w-12 shrink-0 items-center rounded-full pr-1.5 text-tp-gray-950 hover:bg-black/5"
-          >
-            <ChevronLeft className="size-8" />
-            {props.unreadElsewhere > 0 && (
-              <span className="-ml-1 text-[15px] font-medium">
-                {props.unreadElsewhere > 99 ? "99+" : props.unreadElsewhere}
-              </span>
-            )}
-          </button>
+        <header className="flex h-16 shrink-0 items-center gap-1 pr-1 pl-4">
           <div className="min-w-0 flex-1">
             <h1 className="flex items-center gap-1 text-[17px] leading-tight font-bold text-tp-gray-950">
               <span className="truncate">
                 {question ? "討論串" : "新問題"}
               </span>
               {members > 1 && <span className="shrink-0 font-normal">({members})</span>}
-              {props.prefs?.muted && (
-                <BellOff className="size-4 shrink-0" aria-label="已關閉提醒" />
-              )}
             </h1>
             <p className="truncate text-[13px] text-tp-gray-700">{subtitle}</p>
           </div>
@@ -415,12 +407,12 @@ export function ChatRoom(props: ChatRoomProps) {
 
       {question && !isAuthor && question.category === "uncategorized" && (
         <div className="mx-3 mb-2 flex shrink-0 items-center gap-2 rounded-xl bg-white px-3 py-2 ring-1 ring-tp-gray-100">
-          <Tag className="size-5 shrink-0 text-tp-primary-700" />
+          <Tag className="size-5 shrink-0 text-tp-primary-500" />
           <span className="min-w-0 flex-1 text-[15px] text-tp-gray-900">這題還沒有分類</span>
           <button
             type="button"
             onClick={() => setClassifyOpen(true)}
-            className="min-h-10 shrink-0 rounded-full bg-tp-primary-700 px-4 text-[15px] font-bold text-white active:bg-tp-primary-800"
+            className="min-h-10 shrink-0 rounded-full bg-tp-primary-500 px-4 text-[15px] font-bold text-white active:bg-tp-primary-600"
           >
             幫忙分類
           </button>
@@ -463,7 +455,7 @@ export function ChatRoom(props: ChatRoomProps) {
       {banner && <p className={cn("flex shrink-0 items-center justify-center gap-1.5 px-3 py-2 text-center text-[15px] font-medium", banner.className)}>
         {question?.status === "resolved" && <CircleCheckBig className="size-4" />}{banner.text}
       </p>}
-      {canResolve && <button type="button" onClick={resolve} disabled={resolving} className="mx-3 mb-2 flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-tp-primary-500/15 px-3 text-[15px] font-semibold text-tp-primary-700 disabled:opacity-50">
+      {canResolve && <button type="button" onClick={resolve} disabled={resolving} className="mx-3 mb-2 flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-tp-primary-50 px-3 text-[15px] font-semibold text-tp-primary-500 disabled:opacity-50">
         {resolving ? <LoaderCircle className="size-5 animate-spin" /> : <CircleCheckBig className="size-5" />}
         標記為已解決
       </button>}
@@ -499,19 +491,6 @@ export function ChatRoom(props: ChatRoomProps) {
               </div>
             );
           }
-          if (item.type === "unread") {
-            return (
-              <div
-                key={item.key}
-                data-unread-marker
-                className="my-3 flex justify-center"
-              >
-                <span className="rounded-full bg-tp-primary-500/12 px-3 py-1 text-[12px] font-medium text-tp-primary-700">
-                  以下為新回答
-                </span>
-              </div>
-            );
-          }
           return (
             <PostRow
               key={item.key}
@@ -526,7 +505,7 @@ export function ChatRoom(props: ChatRoomProps) {
         })}
         {sending && (
           <div className="mt-3 flex justify-end">
-            <span className="flex items-center gap-1.5 rounded-full bg-tp-primary-500/15 px-3 py-1.5 text-[13px] text-tp-primary-700">
+            <span className="flex items-center gap-1.5 rounded-full bg-tp-primary-50 px-3 py-1.5 text-[13px] text-tp-primary-500">
               <LoaderCircle className="size-3.5 animate-spin" />
               傳送中…
             </span>
@@ -574,11 +553,12 @@ export function ChatRoom(props: ChatRoomProps) {
           {attachmentMenuOpen && (
             <div className="absolute bottom-full left-2 z-10 mb-2 flex max-w-[calc(100%-1rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-tp-gray-100">
               {([
-                ["camera", "拍照", Camera],
-                ["gallery", "從相簿選照片", ImageIcon],
-                ["video", "傳送影片", Video],
-              ] as const).map(([kind, label, Icon]) => (
-                <button key={label} type="button" onClick={() => { setAttachmentMenuOpen(false); if (kind === "camera") cameraRef.current?.click(); else if (kind === "gallery") galleryRef.current?.click(); else videoRef.current?.click(); }} className="flex min-h-11 items-center gap-2 px-4 text-left text-[15px] text-tp-gray-900 hover:bg-tp-gray-100/50">
+                ["camera", "拍照", Camera, cameraRef],
+                ["record", "錄影", Video, recordVideoRef],
+                ["gallery", "從相簿選照片", ImageIcon, galleryRef],
+                ["video", "從相簿選影片", Videotape, videoRef],
+              ] as const).map(([kind, label, Icon, ref]) => (
+                <button key={kind} type="button" onClick={() => { setAttachmentMenuOpen(false); ref.current?.click(); }} className="flex min-h-11 items-center gap-2 px-4 text-left text-[15px] text-tp-gray-900 hover:bg-tp-gray-100/50">
                   <Icon className="size-5 shrink-0" />{label}
                 </button>
               ))}
@@ -602,7 +582,7 @@ export function ChatRoom(props: ChatRoomProps) {
           {text.trim() ? (
             <IconButton
               label="傳送"
-              className="text-tp-primary-700"
+              className="text-tp-primary-500"
               disabled={sending}
               onClick={sendText}
             >
@@ -640,7 +620,8 @@ export function ChatRoom(props: ChatRoomProps) {
         hidden
         onChange={handlePickFiles}
       />
-      <input ref={videoRef} type="file" accept="video/mp4,video/webm,video/quicktime" hidden onChange={handlePickVideo} />
+      <input ref={recordVideoRef} type="file" accept="video/*" capture="environment" hidden onChange={handlePickVideo} />
+      <input ref={videoRef} type="file" accept={VIDEO_TYPES.join(",")} hidden onChange={handlePickVideo} />
 
       {menu && (
         <PostMenu
@@ -655,12 +636,9 @@ export function ChatRoom(props: ChatRoomProps) {
       {drawerOpen && question && (
         <QuestionDrawer
           question={question}
-          prefs={props.prefs}
           answerCount={othersCount}
           isAuthor={isAuthor}
           onClose={() => setDrawerOpen(false)}
-          onToggleMute={props.onToggleMute}
-          onTogglePin={props.onTogglePin}
           onWithdraw={() => setConfirm({ kind: "withdraw" })}
         />
       )}
@@ -724,7 +702,7 @@ function PostRow({
         m.kind === "image" ? (
           <ImageBubble key={m.id} media={m} onOpen={onOpenImage} />
         ) : m.kind === "video" ? (
-          <video key={m.id} src={m.url} controls playsInline preload="metadata" className="max-h-64 max-w-[220px] rounded-2xl bg-black" aria-label="影片訊息" />
+          <VideoBubble key={m.id} media={m} />
         ) : (
           <AudioBubble key={m.id} media={m} self={post.self} />
         ),
@@ -740,7 +718,7 @@ function PostRow({
       onClick={() => onToggleLike(answer)}
       className={cn(
         "flex min-h-8 items-center gap-1.5 justify-self-start rounded-full px-2 text-[13px] transition-colors disabled:opacity-50",
-        answer.votes.my_vote === 1 ? "bg-tp-primary-500/15 font-semibold text-tp-primary-700" : "text-tp-gray-700 hover:bg-black/5",
+        answer.votes.my_vote === 1 ? "bg-tp-primary-50 font-semibold text-tp-primary-500" : "text-tp-gray-700 hover:bg-black/5",
       )}
     >
       <ThumbsUp className="size-4" fill={answer.votes.my_vote === 1 ? "currentColor" : "none"} />
@@ -884,29 +862,17 @@ function PostMenu({
 
 function QuestionDrawer({
   question,
-  prefs,
   answerCount,
   isAuthor,
   onClose,
-  onToggleMute,
-  onTogglePin,
   onWithdraw,
 }: {
   question: QuestionDetail;
-  prefs: QuestionPrefs | null;
   answerCount: number;
   isAuthor: boolean;
   onClose: () => void;
-  onToggleMute: () => void;
-  onTogglePin: () => void;
   onWithdraw: () => void;
 }) {
-  const muted = prefs?.muted ?? false;
-  const pinned = prefs?.pinned ?? false;
-  const quick: { label: string; icon: LucideIcon; run: () => void }[] = [
-    { label: muted ? "開啟提醒" : "關閉提醒", icon: muted ? BellOff : Bell, run: onToggleMute },
-    { label: pinned ? "取消釘選" : "釘選", icon: Pin, run: onTogglePin },
-  ];
   const statusLabel =
     question.status === "resolved" ? "已解決" : question.status === "in_progress" ? "協助中" : "等待回答";
   const asked = new Date(question.created_at);
@@ -937,20 +903,7 @@ function QuestionDrawer({
             {question.body ?? "（內容待確認）"}
           </p>
         </div>
-        <div className="grid grid-cols-2 border-y border-tp-gray-100/70 py-3">
-          {quick.map(({ label, icon: Icon, run }) => (
-            <button
-              key={label}
-              type="button"
-              onClick={run}
-              className="flex min-h-16 flex-col items-center justify-center gap-1 text-[15px] text-tp-gray-800"
-            >
-              <Icon className="size-7 text-tp-gray-900" />
-              {label}
-            </button>
-          ))}
-        </div>
-        <dl className="flex-1 overflow-y-auto px-5 py-2">
+        <dl className="flex-1 overflow-y-auto border-t border-tp-gray-100/70 px-5 py-2">
           {rows.map(([k, v]) => (
             <div key={k} className="flex justify-between border-b border-tp-gray-100/60 py-3 text-[15px]">
               <dt className="text-tp-gray-600">{k}</dt>
@@ -961,7 +914,7 @@ function QuestionDrawer({
         {isAuthor && <button
           type="button"
           onClick={onWithdraw}
-          className="border-t border-tp-gray-100/70 py-4 text-[15px] text-tp-red-600 hover:bg-tp-red-50"
+          className="border-t border-tp-gray-100/70 py-4 text-[15px] text-tp-warn-200 hover:bg-tp-warn-200/10"
         >
           撤回問題
         </button>}
@@ -1007,7 +960,7 @@ function ConfirmDialog({
             onClick={onConfirm}
             className={cn(
               "min-h-12 rounded-xl py-3 text-[15px] font-bold text-white",
-              danger ? "bg-tp-red-600" : "bg-tp-primary-700",
+              danger ? "bg-tp-warn-200" : "bg-tp-primary-500",
             )}
           >
             {confirmLabel}

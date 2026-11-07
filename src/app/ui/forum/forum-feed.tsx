@@ -81,7 +81,7 @@ export function ForumFeed({
             className={cn(
               "min-h-10 rounded-full border px-4 text-[15px] font-medium transition-colors",
               filter === id
-                ? "border-tp-primary-700 bg-tp-primary-700 text-white"
+                ? "border-tp-primary-500 bg-tp-primary-500 text-white"
                 : "border-tp-gray-100 text-tp-gray-800 hover:bg-tp-gray-100/40",
             )}
           >
@@ -134,7 +134,7 @@ export function ForumFeed({
                   >
                     {categoryLabel(question.category)}
                   </span>
-                  {(question.tags ?? []).slice(0, 2).map((tag) => <span key={tag} className="rounded-md bg-tp-primary-500/10 px-1.5 py-1 font-semibold text-tp-primary-700">#{tag.replace(/^#/, "")}</span>)}
+                  {(question.tags ?? []).slice(0, 2).map((tag) => <span key={tag} className="rounded-md bg-tp-primary-50 px-1.5 py-1 font-semibold text-tp-primary-500">#{tag.replace(/^#/, "")}</span>)}
                 </span>
               </span>
             </span>

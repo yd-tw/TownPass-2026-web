@@ -41,8 +41,9 @@ export const META: Meta = {
     media_per_post_max: 5,
     image_max_bytes: 10 * 1024 * 1024,
     audio_max_bytes: 20 * 1024 * 1024,
-    video_max_bytes: 30 * 1024 * 1024,
     audio_max_seconds: 180,
+    video_max_bytes: 30 * 1024 * 1024,
+    video_max_seconds: 180,
   },
 };
 
@@ -698,8 +699,11 @@ export function createMockApi(
         if (!["video/mp4", "video/webm", "video/quicktime"].includes(file.type)) {
           throw new ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "影片只支援 MP4、WebM、MOV");
         }
-        if (file.size > META.limits.video_max_bytes) {
+        if (file.size > (META.limits.video_max_bytes ?? Infinity)) {
           throw new ApiError(413, "FILE_TOO_LARGE", "影片不能超過 30 MB");
+        }
+        if (durationSeconds && durationSeconds > (META.limits.video_max_seconds ?? Infinity)) {
+          throw new ApiError(400, "VALIDATION_ERROR", "影片最長 3 分鐘");
         }
       } else {
         const type = file.type.split(";")[0];
@@ -717,7 +721,7 @@ export function createMockApi(
         id: makeId("m"),
         kind,
         url: URL.createObjectURL(file),
-        duration_seconds: kind === "audio" ? durationSeconds : undefined,
+        duration_seconds: kind === "image" ? undefined : durationSeconds,
       };
       uploaded.set(m.id, m);
       return clone(m);

@@ -136,7 +136,9 @@ export type Meta = {
     image_max_bytes: number;
     audio_max_bytes: number;
     audio_max_seconds: number;
-    video_max_bytes: number;
+    /** 後端還沒實作影片；實作後 /meta 預計會帶這兩個值 */
+    video_max_bytes?: number;
+    video_max_seconds?: number;
   };
 };
 

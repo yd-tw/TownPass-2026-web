@@ -24,11 +24,9 @@ import {
 import { ChatRoom } from "./chat-room";
 import { ChatList, type ChatListActions } from "./chat-list";
 import { BottomNav, HomeTab } from "./other-tabs";
-import { unreadCount, type Notify, type Outgoing, type QuestionPrefs, type Tab } from "./types";
+import type { Notify, Outgoing, Tab } from "./types";
 
 const NICK_KEY = "line-demo-nickname";
-/** 未讀位置、釘選、提醒等本機偏好，依使用者分開存 */
-const prefsKey = (userId: string) => `line-prefs:${userId}`;
 
 const noopSubscribe = () => () => {};
 
@@ -96,19 +94,12 @@ function errorMessage(e: unknown) {
   return "連線失敗，請稍後再試";
 }
 
-const newPrefs = (lastSeenAt: string): QuestionPrefs => ({
-  pinned: false,
-  muted: false,
-  lastSeenAt,
-});
-
 /** key 在新問題送出後保持不變，聊天室才不會重新播放進場動畫 */
 type Active = {
   key: string;
   id: string | null;
   category: CategoryId;
   locationSharing: "off" | "approximate";
-  marker: string | null;
 };
 
 type Connection =
@@ -185,7 +176,7 @@ function LineAppInner() {
               setConn({ status: "connecting" });
               setAttempt((n) => n + 1);
             }}
-            className="mt-2 w-full max-w-xs rounded-2xl bg-tp-primary-700 py-4 text-[20px] font-bold text-white active:bg-tp-primary-800"
+            className="mt-2 w-full max-w-xs rounded-2xl bg-tp-primary-500 py-4 text-[20px] font-bold text-white active:bg-tp-primary-600"
           >
             重新連線
           </button>
@@ -204,13 +195,12 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
   const forumFilterRef = useRef<"all" | "uncategorized">("all");
   const [details, setDetails] = useState<Record<string, QuestionDetail>>({});
   const [answers, setAnswers] = useState<Record<string, Answer[]>>({});
-  const [prefs, setPrefs] = useState<Record<string, QuestionPrefs>>({});
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(() => Date.now());
   const [tab, setTab] = useState<Tab>("home");
   const [active, setActive] = useState<Active | null>(() =>
     new URLSearchParams(window.location.search).get("mode") === "ask"
-      ? { key: makeId(), id: null, category: "uncategorized", locationSharing: "approximate", marker: null }
+      ? { key: makeId(), id: null, category: "uncategorized", locationSharing: "approximate" }
       : null,
   );
   const touchStart = useRef<{ x: number; y: number } | null>(null);
@@ -222,9 +212,9 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
   } | null>(null);
 
   // socket 訊號的處理函式需要讀到最新狀態
-  const latest = useRef({ me, prefs, questions, activeId: active?.id ?? null });
+  const latest = useRef({ me, answers, activeId: active?.id ?? null });
   useEffect(() => {
-    latest.current = { me, prefs, questions, activeId: active?.id ?? null };
+    latest.current = { me, answers, activeId: active?.id ?? null };
   });
 
   const notify: Notify = useCallback(
@@ -305,27 +295,7 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
       ...prev,
       ...Object.fromEntries(rows.map((r) => [r.q.id, r.ans])),
     }));
-    setPrefs((prev) => {
-      const next = { ...prev };
-      for (const { q } of rows) {
-        // 第一次看到的問題：已解決的視為都看過，其他的回答都算未讀
-        next[q.id] ??= newPrefs(
-          q.status === "resolved" ? new Date().toISOString() : q.created_at,
-        );
-      }
-      return next;
-    });
   }, [api, loadSummaries]);
-
-  const markSeen = useCallback((id: string) => {
-    setPrefs((prev) => ({
-      ...prev,
-      [id]: {
-        ...(prev[id] ?? newPrefs("")),
-        lastSeenAt: new Date().toISOString(),
-      },
-    }));
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -335,16 +305,6 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
       .then(([m]) => {
         if (cancelled) return;
         setMe(m);
-        // 本機存的未讀位置、釘選、提醒蓋過預設值
-        try {
-          const saved = localStorage.getItem(prefsKey(m.id));
-          if (saved) {
-            const stored = JSON.parse(saved) as Record<string, QuestionPrefs>;
-            setPrefs((prev) => ({ ...prev, ...stored }));
-          }
-        } catch {
-          // 讀不到就用預設值
-        }
       })
       .catch((e) => {
         if (!cancelled) notify(errorMessage(e), "error");
@@ -370,10 +330,6 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
     url.searchParams.delete("question");
     window.history.replaceState(window.history.state, "", url);
 
-    const p = prefs[id];
-    const firstUnread = (answers[id] ?? []).find(
-      (a) => a.author.id !== me?.id && p && a.created_at > p.lastSeenAt,
-    );
     // 在 then 裡才開始載入，避免在 effect 本體同步 setState
     Promise.resolve()
       .then(() => loadQuestion(id))
@@ -383,23 +339,11 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           id,
           category: detail.category,
           locationSharing: detail.location_sharing === "off" ? "off" : "approximate",
-          marker: firstUnread?.id ?? null,
         });
-        markSeen(id);
         return loadAnswers(id);
       })
       .catch((e) => notify(errorMessage(e), "error"));
-  }, [loading, prefs, answers, me, loadQuestion, loadAnswers, markSeen, notify]);
-
-  // 偏好有變就存起來（重新整理後未讀數才不會全部回來）
-  useEffect(() => {
-    if (!me) return;
-    try {
-      localStorage.setItem(prefsKey(me.id), JSON.stringify(prefs));
-    } catch {
-      // 存不了就算了：只是便利功能
-    }
-  }, [me, prefs]);
+  }, [loading, loadQuestion, loadAnswers, notify]);
 
   // 只訂閱自己的問題和正在看的問題（question:subscribe）
   const activeId = active?.id ?? null;
@@ -421,27 +365,21 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
             await Promise.all([loadQuestion(id), loadSummaries(), loadForumQuestions()]);
             return;
           }
+          // 重抓前先記下已經有的回答，重抓後多出來的就是新回答
+          const known = latest.current.answers[id];
           const [list] = await Promise.all([loadAnswers(id), loadSummaries(), loadForumQuestions()]);
-          const { me: currentMe, prefs: currentPrefs, activeId } = latest.current;
-          if (activeId === id) {
-            markSeen(id);
-            return;
-          }
-          const last = list.at(-1);
-          const p = currentPrefs[id];
-          if (
-            last &&
-            last.author.id !== currentMe?.id &&
-            p &&
-            last.created_at > p.lastSeenAt
-          ) {
-            if (!p.muted) notify(`${last.author.nickname} 回答了您的問題`);
-          }
+          const { me: currentMe, activeId } = latest.current;
+          // 正在看這題就不用再提醒；還沒載入過的問題也不提醒，避免一次跳出舊回答
+          if (activeId === id || !known) return;
+          const knownIds = new Set(known.map((a) => a.id));
+          const fresh = list.filter((a) => !knownIds.has(a.id) && a.author.id !== currentMe?.id);
+          const last = fresh.at(-1);
+          if (last) notify(`${last.author.nickname} 回答了您的問題`);
         } catch {
           // 問題已被撤回（404）等情況：下次載入列表時會修正
         }
       }),
-    [api, loadAll, loadAnswers, loadQuestion, loadSummaries, loadForumQuestions, markSeen, notify],
+    [api, loadAll, loadAnswers, loadQuestion, loadSummaries, loadForumQuestions, notify],
   );
 
   // ---- 動作 ----
@@ -450,17 +388,12 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
     const summary = questions.find((q) => q.id === id);
     const category = detail?.category ?? summary?.category;
     if (!category) return;
-    const p = prefs[id];
-    const firstUnread = (answers[id] ?? []).find(
-      (a) => a.author.id !== me?.id && p && a.created_at > p.lastSeenAt,
-    );
-    setActive({ key: id, id, category, locationSharing: detail?.location_sharing === "off" ? "off" : "approximate", marker: firstUnread?.id ?? null });
-    markSeen(id);
+    setActive({ key: id, id, category, locationSharing: detail?.location_sharing === "off" ? "off" : "approximate" });
     Promise.all([loadQuestion(id), loadAnswers(id)]).catch((e) => notify(errorMessage(e), "error"));
   }
 
   function startDraft() {
-    setActive({ key: makeId(), id: null, category: "uncategorized", locationSharing: "approximate", marker: null });
+    setActive({ key: makeId(), id: null, category: "uncategorized", locationSharing: "approximate" });
   }
 
   async function send(out: Outgoing) {
@@ -477,7 +410,7 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           mediaIds.push((await api.uploadMedia(file, "image")).id);
         }
       } else if (out.kind === "video") {
-        mediaIds.push((await api.uploadMedia(out.file, "video")).id);
+        mediaIds.push((await api.uploadMedia(out.file, "video", out.duration)).id);
       } else {
         mediaIds.push((await api.uploadMedia(out.blob, "audio", out.duration)).id);
       }
@@ -503,7 +436,6 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
         });
         setDetails((prev) => ({ ...prev, [q.id]: q }));
         setAnswers((prev) => ({ ...prev, [q.id]: [] }));
-        setPrefs((prev) => ({ ...prev, [q.id]: newPrefs(q.created_at) }));
         setActive((a) => (a ? { ...a, id: q.id, category: q.category } : a));
         await loadSummaries();
         await loadForumQuestions();
@@ -517,7 +449,6 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
         });
         await loadAnswers(active.id);
         await loadForumQuestions();
-        markSeen(active.id);
       }
       return true;
     } catch (e) {
@@ -594,23 +525,12 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
     }
   }
 
-  const updatePrefs = (id: string, patch: (p: QuestionPrefs) => Partial<QuestionPrefs>) =>
-    setPrefs((prev) => {
-      const p = prev[id] ?? newPrefs(new Date().toISOString());
-      return { ...prev, [id]: { ...p, ...patch(p) } };
-    });
-
   const listActions: ChatListActions = {
     onOpen: openQuestion,
     onAsk: startDraft,
-    onTogglePin: (id) => updatePrefs(id, (p) => ({ pinned: !p.pinned })),
-    onToggleMute: (id) => updatePrefs(id, (p) => ({ muted: !p.muted })),
-    onMarkRead: markSeen,
   };
 
   const meId = me?.id ?? "";
-  const unreadOf = (id: string) => unreadCount(answers[id], meId, prefs[id]?.lastSeenAt);
-  const totalUnread = questions.reduce((sum, q) => sum + unreadOf(q.id), 0);
   const activeQuestion = active?.id ? details[active.id] ?? forumQuestions.find((q) => q.id === active.id) : null;
 
   function endSwipe(event: TouchEvent<HTMLDivElement>) {
@@ -636,7 +556,6 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           <HomeTab
             questions={questions.map((q) => ({
               q,
-              unread: unreadOf(q.id),
               answered: (answers[q.id] ?? []).filter((a) => a.author.id !== meId).length,
             }))}
             onAsk={startDraft}
@@ -649,7 +568,6 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
             questions={questions}
             details={details}
             answers={answers}
-            prefs={prefs}
             meId={meId}
             now={now}
             loading={loading}
@@ -668,7 +586,7 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           />
         )}
       </div>
-      <BottomNav tab={tab} unread={totalUnread} onChange={setTab} />
+      <BottomNav tab={tab} onChange={setTab} />
 
       {active && (active.id === null || activeQuestion) && (
         <ChatRoom
@@ -677,11 +595,8 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           question={activeQuestion ?? null}
           category={active.category}
           answers={active.id ? (answers[active.id] ?? []) : []}
-          prefs={active.id ? (prefs[active.id] ?? null) : null}
           now={now}
           sending={sending}
-          unreadElsewhere={totalUnread - (active.id ? unreadOf(active.id) : 0)}
-          unreadMarkerKey={active.marker}
           onBack={() => setActive(null)}
           onSend={send}
           locationSharing={active.locationSharing}
@@ -691,12 +606,6 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           onToggleLike={toggleLike}
           onDeleteAnswer={deleteAnswer}
           onWithdraw={() => (active.id ? withdraw(active.id) : Promise.resolve())}
-          onToggleMute={() =>
-            active.id && updatePrefs(active.id, (p) => ({ muted: !p.muted }))
-          }
-          onTogglePin={() =>
-            active.id && updatePrefs(active.id, (p) => ({ pinned: !p.pinned }))
-          }
           notify={notify}
         />
       )}

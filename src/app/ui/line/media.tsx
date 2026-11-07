@@ -6,6 +6,32 @@ import { cn } from "@/lib/utils";
 import type { Media } from "./api/types";
 import { formatDuration } from "./format";
 
+/**
+ * 聊天室裡的影片：用瀏覽器內建的播放控制（長輩在其他 App 看過，最熟悉），
+ * 右上角標出長度，還沒播放前就知道要看多久。
+ */
+export function VideoBubble({ media }: { media: Media }) {
+  const duration = media.duration_seconds ? formatDuration(media.duration_seconds) : null;
+  return (
+    <div className="relative overflow-hidden rounded-2xl bg-black shadow-sm">
+      {/* #t=0.1 讓 iPhone 在播放前也顯示第一個畫面，不會是一片黑 */}
+      <video
+        src={media.url.includes("#") ? media.url : `${media.url}#t=0.1`}
+        controls
+        playsInline
+        preload="metadata"
+        className="block max-h-72 w-[220px] max-w-full"
+        aria-label={duration ? `影片，長度 ${duration}` : "影片"}
+      />
+      {duration && (
+        <span className="pointer-events-none absolute top-2 right-2 rounded-full bg-black/60 px-2 py-0.5 text-[12px] font-medium text-white">
+          {duration}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** 聊天室裡的照片，點一下放大 */
 export function ImageBubble({
   media,
@@ -111,7 +137,7 @@ export function AudioBubble({ media, self }: { media: Media; self: boolean }) {
         aria-label={playing ? "暫停語音" : "播放語音"}
         className={cn(
           "flex size-12 shrink-0 items-center justify-center rounded-full",
-          self ? "bg-white/60 text-tp-primary-700" : "bg-tp-primary-500/15 text-tp-primary-700",
+          self ? "bg-white/60 text-tp-primary-500" : "bg-tp-primary-50 text-tp-primary-500",
         )}
       >
         {playing ? (
@@ -127,9 +153,9 @@ export function AudioBubble({ media, self }: { media: Media; self: boolean }) {
             className={cn(
               "w-[3px] rounded-full",
               i / bars.length < progress
-                ? "bg-tp-primary-700"
+                ? "bg-tp-primary-500"
                 : self
-                  ? "bg-tp-primary-700/30"
+                  ? "bg-tp-primary-500/30"
                   : "bg-tp-gray-300",
             )}
             style={{ height: `${h}%` }}
@@ -271,7 +297,7 @@ export function VoiceRecorder({
         <span className="flex items-center gap-2 text-[20px] font-semibold tabular-nums text-tp-gray-900">
           <span
             className={cn(
-              "size-3 rounded-full bg-tp-red-500",
+              "size-3 rounded-full bg-tp-warn-200",
               recording && "animate-pulse",
             )}
           />
@@ -289,7 +315,7 @@ export function VoiceRecorder({
         onClick={finish}
         disabled={!recording}
         aria-label="結束錄音並傳送"
-        className="flex size-14 shrink-0 items-center justify-center rounded-full bg-tp-primary-700 text-white disabled:opacity-40"
+        className="flex size-14 shrink-0 items-center justify-center rounded-full bg-tp-primary-500 text-white disabled:opacity-40"
       >
         <SendHorizontal className="size-7" />
       </button>

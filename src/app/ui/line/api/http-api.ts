@@ -66,6 +66,14 @@ function audioFileName(type: string) {
   return { name: "voice.webm", type: "audio/webm" };
 }
 
+/** iPhone 錄的是 MOV（video/quicktime），Android 多半是 MP4 */
+function videoFileName(type: string) {
+  const base = type.split(";")[0];
+  if (base === "video/quicktime") return { name: "video.mov", type: base };
+  if (base === "video/webm") return { name: "video.webm", type: base };
+  return { name: "video.mp4", type: "video/mp4" };
+}
+
 /**
  * 接真的後端（api-spec.md）的 AskerApi。
  * @param token POST /sessions 拿到的 token
@@ -247,14 +255,24 @@ export function createHttpApi(
       data<VoteSummary>("DELETE", `/answers/${encodeURIComponent(answerId)}/vote`),
 
     async uploadMedia(file, kind, durationSeconds) {
-      if (kind === "video") {
-        // 後端 POST /media 目前只收 image 和 audio
-        throw new ApiError(415, "VIDEO_NOT_SUPPORTED", "目前還不能傳影片，請改用拍照或錄音");
-      }
       // 文字欄位放在檔案前面：有些 multipart 解析器處理檔案時只看得到前面的欄位
       const form = new FormData();
       form.append("kind", kind);
-      if (kind === "audio") {
+      if (kind === "video") {
+        // 假設後端之後會照語音的格式支援 kind=video（duration_seconds 選填）
+        const { name, type } = videoFileName(file.type);
+        if (durationSeconds) form.append("duration_seconds", String(Math.round(durationSeconds)));
+        form.append("file", new File([file], name, { type }));
+        try {
+          return await data<Media>("POST", "/media", form);
+        } catch (e) {
+          // 後端還沒實作時會回 400：kind 只允許 image、audio
+          if (e instanceof ApiError && e.code === "VALIDATION_ERROR" && e.message.includes("kind")) {
+            throw new ApiError(e.status, "VIDEO_NOT_SUPPORTED", "伺服器還不能收影片，請先改用拍照或錄音");
+          }
+          throw e;
+        }
+      } else if (kind === "audio") {
         const { name, type } = audioFileName(file.type);
         form.append("duration_seconds", String(durationSeconds ?? 0));
         form.append("file", new File([file], name, { type }));
