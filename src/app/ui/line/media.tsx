@@ -284,30 +284,27 @@ export function VoiceRecorder({
   }
 
   return (
-    <div className="flex shrink-0 items-center gap-3 border-t border-tp-gray-100 bg-tp-gray-50 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+    <div className="flex shrink-0 items-center gap-0.5 border-t border-tp-gray-100 bg-tp-gray-50 px-1.5 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
       <button
         type="button"
         onClick={cancel}
         aria-label="取消錄音"
-        className="flex size-14 shrink-0 items-center justify-center rounded-full bg-tp-gray-100 text-tp-gray-800"
+        className="flex size-12 shrink-0 items-center justify-center rounded-full text-tp-gray-800 transition-colors hover:bg-black/5 active:bg-black/10"
       >
         <Trash2 className="size-7" />
       </button>
-      <div className="flex min-w-0 flex-1 flex-col items-center">
-        <span className="flex items-center gap-2 text-[20px] font-semibold tabular-nums text-tp-gray-900">
+      <div className="flex min-w-0 flex-1 items-center justify-center">
+        <span className="flex items-center gap-2 text-[18px] font-semibold tabular-nums text-tp-gray-900 max-[300px]:gap-1">
           <span
             className={cn(
-              "size-3 rounded-full bg-tp-warn-200",
+              "size-3 shrink-0 rounded-full bg-tp-warn-200",
               recording && "animate-pulse",
             )}
           />
           {formatDuration(elapsed)}
-          <span className="text-[15px] font-normal text-tp-gray-600">
+          <span className="text-[15px] font-normal text-tp-gray-600 max-[300px]:hidden">
             / {formatDuration(maxSeconds)}
           </span>
-        </span>
-        <span className="text-[15px] text-tp-gray-700">
-          {recording ? "說完請按右邊的傳送" : "準備麥克風…"}
         </span>
       </div>
       <button
@@ -315,7 +312,7 @@ export function VoiceRecorder({
         onClick={finish}
         disabled={!recording}
         aria-label="結束錄音並傳送"
-        className="flex size-14 shrink-0 items-center justify-center rounded-full bg-tp-primary-500 text-white disabled:opacity-40"
+        className="flex size-12 shrink-0 items-center justify-center rounded-full text-tp-primary-500 transition-colors hover:bg-black/5 active:bg-black/10 disabled:opacity-40"
       >
         <SendHorizontal className="size-7" />
       </button>

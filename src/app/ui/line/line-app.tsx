@@ -399,13 +399,12 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
       const mediaIds: string[] = [];
       if (out.kind === "text") {
         body = out.text;
-      } else if (out.kind === "images") {
-        // 規格：圖片要先在手機端遮蔽個資才上傳（尚未實作遮蔽工具）
-        for (const file of out.files) {
-          mediaIds.push((await api.uploadMedia(file, "image")).id);
+      } else if (out.kind === "media") {
+        body = out.text;
+        for (const item of out.files) {
+          // 規格：圖片要先在手機端遮蔽個資才上傳（尚未實作遮蔽工具）
+          mediaIds.push((await api.uploadMedia(item.file, item.kind, item.duration)).id);
         }
-      } else if (out.kind === "video") {
-        mediaIds.push((await api.uploadMedia(out.file, "video", out.duration)).id);
       } else {
         mediaIds.push((await api.uploadMedia(out.blob, "audio", out.duration)).id);
       }

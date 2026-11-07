@@ -110,6 +110,7 @@ type Item =
   | { type: "post"; key: string; post: Post; first: boolean };
 
 type Confirm = { kind: "withdraw" };
+type PendingMedia = { id: string; kind: "image" | "video"; file: File; duration?: number };
 
 export function ChatRoom(props: ChatRoomProps) {
   const { question, answers, meId, now, sending, notify } = props;
@@ -122,6 +123,8 @@ export function ChatRoom(props: ChatRoomProps) {
   const recordVideoRef = useRef<HTMLInputElement>(null);
 
   const [text, setText] = useState("");
+  const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
+  const [checkingVideo, setCheckingVideo] = useState(false);
   const [recording, setRecording] = useState(false);
   const [menu, setMenu] = useState<{ post: Post; top: number } | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
@@ -254,12 +257,22 @@ export function ChatRoom(props: ChatRoomProps) {
   // ---- 送出 ----
   async function sendText() {
     const trimmed = text.trim();
-    if (!trimmed || sending) return;
+    if ((!trimmed && pendingMedia.length === 0) || sending || checkingVideo) return;
     if (trimmed.length > META.limits.question_body_max_chars) {
       notify("字數太多了，請分幾次傳送", "error");
       return;
     }
-    if (await props.onSend({ kind: "text", text: trimmed })) setText("");
+    const sent = pendingMedia.length
+      ? await props.onSend({
+          kind: "media",
+          text: trimmed || undefined,
+          files: pendingMedia.map(({ kind, file, duration }) => ({ kind, file, duration })),
+        })
+      : await props.onSend({ kind: "text", text: trimmed });
+    if (sent) {
+      setText((current) => current === text ? "" : current);
+      setPendingMedia([]);
+    }
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -280,8 +293,8 @@ export function ChatRoom(props: ChatRoomProps) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
     if (files.length === 0) return;
-    if (files.length > META.limits.media_per_post_max) {
-      notify(`一次最多傳 ${META.limits.media_per_post_max} 張照片`, "error");
+    if (files.length + pendingMedia.length > META.limits.media_per_post_max) {
+      notify(`一則訊息最多附加 ${META.limits.media_per_post_max} 個檔案`, "error");
       return;
     }
     if (files.some((f) => !IMAGE_TYPES.includes(f.type))) {
@@ -292,13 +305,17 @@ export function ChatRoom(props: ChatRoomProps) {
       notify("照片太大了，每張不能超過 10 MB", "error");
       return;
     }
-    props.onSend({ kind: "images", files });
+    setPendingMedia((current) => [...current, ...files.map((file) => ({ id: crypto.randomUUID(), kind: "image" as const, file }))]);
   }
 
   async function handlePickVideo(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    if (pendingMedia.length >= META.limits.media_per_post_max) {
+      notify(`一則訊息最多附加 ${META.limits.media_per_post_max} 個檔案`, "error");
+      return;
+    }
     if (!VIDEO_TYPES.includes(file.type.split(";")[0])) {
       notify("影片格式要是 MP4、WebM 或 MOV", "error");
       return;
@@ -307,12 +324,14 @@ export function ChatRoom(props: ChatRoomProps) {
       notify(`影片太大了，不能超過 ${Math.round(VIDEO_MAX_BYTES / 1024 / 1024)} MB，請錄短一點`, "error");
       return;
     }
+    setCheckingVideo(true);
     const duration = await readVideoDuration(file);
+    setCheckingVideo(false);
     if (duration && duration > VIDEO_MAX_SECONDS) {
       notify(`影片太長了，最長 ${Math.round(VIDEO_MAX_SECONDS / 60)} 分鐘，請錄短一點`, "error");
       return;
     }
-    props.onSend({ kind: "video", file, duration });
+    setPendingMedia((current) => [...current, { id: crypto.randomUUID(), kind: "video", file, duration }]);
   }
 
   async function resolve() {
@@ -541,6 +560,25 @@ export function ChatRoom(props: ChatRoomProps) {
         />
       ) : (
         <div className="relative shrink-0 border-t border-tp-gray-100 bg-tp-gray-50 px-1.5 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+          {pendingMedia.length > 0 && (
+            <div className="flex max-h-28 gap-2 overflow-x-auto px-2 pb-2" aria-label="待傳附件">
+              {pendingMedia.map((item) => (
+                <div key={item.id} className="flex max-w-40 shrink-0 items-center gap-1.5 rounded-xl bg-tp-gray-100 px-2 py-1.5 text-[13px] text-tp-gray-900">
+                  <PendingMediaThumbnail item={item} />
+                  <span className="min-w-0 truncate" title={item.file.name}>{item.file.name}</span>
+                  <button
+                    type="button"
+                    aria-label={`移除 ${item.file.name}`}
+                    disabled={sending}
+                    onClick={() => setPendingMedia((current) => current.filter((pending) => pending.id !== item.id))}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full hover:bg-tp-gray-200 disabled:opacity-50"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           {/* 發問選項：浮在「…」上方，從下面滑出來 */}
           {!question && draftOptionsOpen && (
             <div className="absolute bottom-full left-2 z-10 mb-2 w-[min(20rem,calc(100%-1rem))] rounded-2xl bg-white p-3 shadow-xl ring-1 ring-tp-gray-100 animate-in fade-in slide-in-from-bottom-4 duration-200">
@@ -566,7 +604,7 @@ export function ChatRoom(props: ChatRoomProps) {
           )}
           <div className="flex min-w-0 items-end gap-0.5">
           {!question && <IconButton label="發問額外選項" onClick={() => { setAttachmentMenuOpen(false); setDraftOptionsOpen((open) => !open); }} className="max-[300px]:size-10"><MoreHorizontal className="size-6" /></IconButton>}
-          <IconButton label="新增附件" disabled={sending} onClick={() => { setDraftOptionsOpen(false); setAttachmentMenuOpen((open) => !open); }} className="max-[300px]:size-10"><Plus className="size-7" /></IconButton>
+          <IconButton label="新增附件" disabled={sending || checkingVideo} onClick={() => { setDraftOptionsOpen(false); setAttachmentMenuOpen((open) => !open); }} className="max-[300px]:size-10"><Plus className="size-7" /></IconButton>
           <div className="mx-1 flex min-h-12 min-w-0 flex-1 items-end rounded-[24px] bg-tp-gray-100/70 px-4 max-[300px]:px-2">
             <textarea
               rows={1}
@@ -579,14 +617,14 @@ export function ChatRoom(props: ChatRoomProps) {
               className="field-sizing-content max-h-36 min-h-12 min-w-0 flex-1 resize-none bg-transparent py-3 text-[15px] leading-6 outline-none placeholder:text-tp-gray-600"
             />
           </div>
-          {text.trim() ? (
+          {text.trim() || pendingMedia.length > 0 ? (
             <IconButton
               label="傳送"
               className="text-tp-primary-500"
-              disabled={sending}
+              disabled={sending || checkingVideo}
               onClick={sendText}
             >
-              {sending ? (
+              {sending || checkingVideo ? (
                 <LoaderCircle className="size-7 animate-spin" />
               ) : (
                 <SendHorizontal className="size-7" />
@@ -660,6 +698,26 @@ export function ChatRoom(props: ChatRoomProps) {
 
       {lightbox && <Lightbox url={lightbox} onClose={() => setLightbox(null)} />}
     </div>
+  );
+}
+
+function PendingMediaThumbnail({ item }: { item: PendingMedia }) {
+  const imageRef = useRef<HTMLImageElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const url = URL.createObjectURL(item.file);
+    if (item.kind === "image" && imageRef.current) imageRef.current.src = url;
+    if (item.kind === "video" && videoRef.current) videoRef.current.src = `${url}#t=0.1`;
+    return () => URL.revokeObjectURL(url);
+  }, [item.file, item.kind]);
+
+  return item.kind === "image" ? (
+    // blob: 網址僅用於尚未送出的本機預覽
+    // eslint-disable-next-line @next/next/no-img-element
+    <img ref={imageRef} alt="" className="size-9 shrink-0 rounded-md object-cover" />
+  ) : (
+    <video ref={videoRef} aria-hidden="true" muted playsInline preload="metadata" className="size-9 shrink-0 rounded-md bg-black object-cover" />
   );
 }
 
