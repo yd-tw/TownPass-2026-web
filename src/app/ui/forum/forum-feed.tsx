@@ -7,6 +7,7 @@ import type { QuestionDetail } from "@/app/ui/line/api/types";
 import { questionTags } from "@/app/ui/line/categories";
 import { AudioBubble, ImageBubble, Lightbox, VideoBubble } from "@/app/ui/line/media";
 import { useBackLayer } from "@/app/ui/line/use-back-layer";
+import { ForumRowsSkeleton } from "@/app/ui/line/page-skeleton";
 
 function timeAgo(value: string, now: number) {
   const minutes = Math.max(1, Math.floor((now - Date.parse(value)) / 60_000));
@@ -160,14 +161,15 @@ export function ForumFeed({
           <span className="flex items-center gap-2.5"><Avatar name={nickname} size={40} /><span className="text-[15px] text-tp-gray-600">有什麼問題？</span></span>
         </button>
 
-        {loading && <p className="py-12 text-center text-[15px] text-tp-gray-600">載入討論中…</p>}
+        {loading && <p role="status" className="sr-only">載入討論中…</p>}
         {!loading && visible.length === 0 && (
           <p className="py-12 text-center text-[15px] text-tp-gray-600">
             {query ? "找不到符合的討論" : "目前沒有討論串"}
           </p>
         )}
-        <div className="divide-y divide-tp-gray-100">
-          {visible.map((question) => (
+        <div aria-busy={loading} className="divide-y divide-tp-gray-100">
+          {loading && <ForumRowsSkeleton />}
+          {!loading && visible.map((question) => (
             <article
               key={question.id}
               className="relative w-full px-4 py-3 transition-colors hover:bg-tp-gray-100/35"

@@ -8,6 +8,7 @@ import { QuestionAvatar } from "./avatar";
 import { questionTags } from "./categories";
 import { answerPreview, formatListTime } from "./format";
 import { useBackLayer } from "./use-back-layer";
+import { ChatRowsSkeleton } from "./page-skeleton";
 
 /*
  * 長輩版的列表刻意只留「搜尋」和「我要發問」：
@@ -103,11 +104,12 @@ export function ChatList({
         </label>
       </div>
 
-      <ul className="divide-y divide-tp-gray-100 pb-24">
+      <ul aria-busy={loading} className="divide-y divide-tp-gray-100 pb-24">
         {loading && (
-          <li className="px-4 py-16 text-center text-[15px] text-tp-gray-600">
-            載入中…
-          </li>
+          <>
+            <li role="status" className="sr-only">載入中…</li>
+            <ChatRowsSkeleton />
+          </>
         )}
         {!loading && rows.length === 0 && (
           <li className="flex flex-col items-center gap-4 px-6 py-16 text-center">
@@ -126,7 +128,7 @@ export function ChatList({
             )}
           </li>
         )}
-        {rows.map((row) => (
+        {!loading && rows.map((row) => (
           <QuestionRow
             key={row.q.id}
             row={row}
@@ -136,11 +138,11 @@ export function ChatList({
           />
         ))}
       </ul>
-      {note && <p className="px-4 pb-5 text-center text-[12px] text-tp-gray-600">{note}</p>}
+      {!loading && note && <p className="px-4 pb-5 text-center text-[12px] text-tp-gray-600">{note}</p>}
       </div>
 
       {/* 我要發問：浮在右下角，拇指最好按到的位置 */}
-      {(questions.length > 0 || query.trim()) && <button
+      {!loading && (questions.length > 0 || query.trim()) && <button
         type="button"
         onClick={actions.onAsk}
         className="absolute right-4 bottom-4 z-20 flex h-14 items-center gap-2 rounded-full bg-tp-primary-500 pr-6 pl-5 text-[18px] font-bold text-white shadow-lg ring-1 ring-black/5 active:bg-tp-primary-600"

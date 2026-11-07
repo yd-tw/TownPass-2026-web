@@ -24,6 +24,7 @@ import {
 } from "./api/types";
 import { ChatRoom, type PendingMedia } from "./chat-room";
 import { ChatList, type ChatListActions } from "./chat-list";
+import { PageSkeleton, type SkeletonPage } from "./page-skeleton";
 import type { Notify, Outgoing } from "./types";
 import { callApp, isInTownPass, postToApp, type ReportDraft } from "@/lib/townpass-bridge";
 
@@ -40,6 +41,14 @@ const noopSubscribe = () => () => {};
  * @param ask 一開啟就進入新問題聊天室（/new「我要發問」）
  */
 export default function LineApp({ ask = false }: { ask?: boolean }) {
+  const pathname = usePathname();
+  const skeletonPage: SkeletonPage = pathname === "/forum"
+    ? "forum"
+    : pathname === "/room"
+      ? "room"
+      : pathname === "/new"
+        ? "new"
+        : "chat";
   const mounted = useSyncExternalStore(
     noopSubscribe,
     () => true,
@@ -48,26 +57,11 @@ export default function LineApp({ ask = false }: { ask?: boolean }) {
   return (
     <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-tp-gray-50 sm:h-[min(860px,calc(100dvh-2rem))] sm:w-[400px] sm:rounded-[2.25rem] sm:shadow-2xl sm:ring-1 sm:ring-black/10">
       {mounted ? (
-        <LineAppInner ask={ask} />
-      ) : ask ? (
-        // 我要發問：掛載前先鋪聊天室的底色，不顯示轉圈
-        <div className="flex-1 bg-tp-gray-100" />
+        <LineAppInner ask={ask} skeletonPage={skeletonPage} />
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
-          <Connecting />
-        </div>
+        <PageSkeleton kind={skeletonPage} />
       )}
     </div>
-  );
-}
-
-/** 掛載前和連線中用同一個畫面，切換時才不會跳一下 */
-function Connecting() {
-  return (
-    <>
-      <span className="size-10 animate-spin rounded-full border-4 border-tp-primary-500 border-t-transparent" />
-      <p className="text-[17px] text-tp-gray-700">連線中…</p>
-    </>
   );
 }
 
@@ -196,7 +190,7 @@ async function connect(): Promise<{ api: AskerApi; note: string | null }> {
  * 「我要發問」（/new、?mode=ask）不等連線：先用 deferred API 顯示新問題聊天室，
  * 連線在背景進行，使用者按送出時才會等。
  */
-function LineAppInner({ ask }: { ask: boolean }) {
+function LineAppInner({ ask, skeletonPage }: { ask: boolean; skeletonPage: SkeletonPage }) {
   const [instant] = useState(
     () => ask || new URLSearchParams(window.location.search).get("mode") === "ask",
   );
@@ -259,30 +253,23 @@ function LineAppInner({ ask }: { ask: boolean }) {
       />
     );
   }
+  if (conn.status !== "error") return <PageSkeleton kind={skeletonPage} />;
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
-      {conn.status !== "error" ? (
-        <Connecting />
-      ) : (
-        <>
-          <p className="text-[19px] font-bold text-tp-gray-900">暫時連不上</p>
-          <p className="text-[16px] text-tp-gray-700">
-            請確認網路有開，再按下面的按鈕試一次
-          </p>
-          <p className="text-[13px] text-tp-gray-400">{conn.message}</p>
-          <button
-            type="button"
-            onClick={() => {
-              setConn({ status: "connecting" });
-              if (instant) setDeferred(createDeferredApi());
-              setAttempt((n) => n + 1);
-            }}
-            className="mt-2 w-full max-w-xs rounded-2xl bg-tp-primary-500 py-4 text-[20px] font-bold text-white active:bg-tp-primary-600"
-          >
-            重新連線
-          </button>
-        </>
-      )}
+      <p className="text-[19px] font-bold text-tp-gray-900">暫時連不上</p>
+      <p className="text-[16px] text-tp-gray-700">請確認網路有開，再按下面的按鈕試一次</p>
+      <p className="text-[13px] text-tp-gray-400">{conn.message}</p>
+      <button
+        type="button"
+        onClick={() => {
+          setConn({ status: "connecting" });
+          if (instant) setDeferred(createDeferredApi());
+          setAttempt((n) => n + 1);
+        }}
+        className="mt-2 w-full max-w-xs rounded-2xl bg-tp-primary-500 py-4 text-[20px] font-bold text-white active:bg-tp-primary-600"
+      >
+        重新連線
+      </button>
     </div>
   );
 }
@@ -858,9 +845,10 @@ function LineAppConnected({
         )}
       </div>}
       {isRoomPage && !active && (
+        loading ? <PageSkeleton kind="room" /> :
         <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center">
-          {loading ? <Connecting /> : <p className="text-[15px] text-tp-gray-700">無法載入聊天室</p>}
-          {!loading && <button type="button" onClick={closeConversation} className="min-h-11 rounded-xl bg-tp-primary-500 px-6 text-white">返回</button>}
+          <p className="text-[15px] text-tp-gray-700">無法載入聊天室</p>
+          <button type="button" onClick={closeConversation} className="min-h-11 rounded-xl bg-tp-primary-500 px-6 text-white">返回</button>
         </div>
       )}
 
