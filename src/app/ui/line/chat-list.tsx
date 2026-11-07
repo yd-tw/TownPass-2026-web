@@ -102,7 +102,7 @@ export function ChatList({
         </label>
       </div>
 
-      <ul className="pb-24">
+      <ul className="divide-y divide-tp-gray-100 pb-24">
         {loading && (
           <li className="px-4 py-16 text-center text-[15px] text-tp-gray-600">
             載入中…

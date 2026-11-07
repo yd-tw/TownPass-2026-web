@@ -13,7 +13,7 @@ import { formatDuration } from "./format";
 export function VideoBubble({ media }: { media: Media }) {
   const duration = media.duration_seconds ? formatDuration(media.duration_seconds) : null;
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-black shadow-sm">
+    <div className="relative max-w-full overflow-hidden rounded-2xl bg-black shadow-sm">
       {/* #t=0.1 讓 iPhone 在播放前也顯示第一個畫面，不會是一片黑 */}
       <video
         src={media.url.includes("#") ? media.url : `${media.url}#t=0.1`}
@@ -44,7 +44,7 @@ export function ImageBubble({
     <button
       type="button"
       onClick={() => onOpen(media.url)}
-      className="block overflow-hidden rounded-2xl bg-tp-gray-100 shadow-sm"
+      className="block max-w-[min(220px,100%)] overflow-hidden rounded-2xl bg-tp-gray-100 shadow-sm"
       aria-label="放大照片"
     >
       {/* blob: 與 data: 網址不能交給 next/image 最佳化 */}
@@ -52,7 +52,7 @@ export function ImageBubble({
       <img
         src={media.url}
         alt="照片"
-        className="max-h-64 w-auto max-w-[220px] object-cover"
+        className="max-h-64 w-auto max-w-[min(220px,100%)] object-cover"
       />
     </button>
   );
@@ -110,7 +110,7 @@ export function AudioBubble({ media, self }: { media: Media; self: boolean }) {
   return (
     <div
       className={cn(
-        "flex items-center gap-2.5 rounded-[18px] py-2 pr-4 pl-2 text-tp-gray-900",
+        "flex w-fit max-w-full items-center gap-2.5 rounded-[18px] py-2 pr-4 pl-2 text-tp-gray-900 max-[300px]:gap-1 max-[300px]:px-1",
         // 自己的語音用跟文字泡泡一樣的淺橘底
         self ? "bg-tp-primary-200" : "bg-white shadow-[0_1px_1px_rgb(20_20_19/0.06)]",
       )}
@@ -146,7 +146,7 @@ export function AudioBubble({ media, self }: { media: Media; self: boolean }) {
           <Play className="ml-0.5 size-6" fill="currentColor" />
         )}
       </button>
-      <div className="flex h-7 items-center gap-[3px]" aria-hidden>
+      <div className="flex h-7 items-center gap-[3px] max-[300px]:hidden" aria-hidden>
         {bars.map((h, i) => (
           <span
             key={i}

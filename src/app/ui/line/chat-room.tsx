@@ -809,7 +809,7 @@ function PostRow({
         first ? "mt-3" : "mt-1.5",
       )}
     >
-      <div className="w-9 shrink-0 max-[300px]:hidden">{first && <Avatar name={post.authorName} size={36} />}</div>
+      <div className="w-10 shrink-0 max-[300px]:hidden">{first && <Avatar name={post.authorName} size={40} />}</div>
       <div className="flex min-w-0 flex-col items-start">
         {first && (
           <span className="mb-1 flex max-w-full items-center gap-1.5 text-[13px] text-tp-gray-800">

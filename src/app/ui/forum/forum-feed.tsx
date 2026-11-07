@@ -1,9 +1,12 @@
 "use client";
 
 import { MapPin, MessageCircle, Search, X } from "lucide-react";
+import { useState } from "react";
 import { Avatar } from "@/app/ui/line/avatar";
 import type { QuestionDetail } from "@/app/ui/line/api/types";
 import { categoryLabel } from "@/app/ui/line/categories";
+import { AudioBubble, ImageBubble, Lightbox, VideoBubble } from "@/app/ui/line/media";
+import { useBackLayer } from "@/app/ui/line/use-back-layer";
 import { cn } from "@/lib/utils";
 
 function timeAgo(value: string, now: number) {
@@ -40,6 +43,8 @@ export function ForumFeed({
   onAsk: () => void;
   onOpen: (id: string) => void;
 }) {
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  useBackLayer(lightbox !== null, () => setLightbox(null));
   const query = search.trim().toLowerCase();
   const ids = new Set(questions.map((question) => question.id));
   const visible = query
@@ -87,7 +92,7 @@ export function ForumFeed({
         <button
           type="button"
           onClick={onAsk}
-          className="w-full px-4 py-3 text-left hover:bg-tp-gray-100/35"
+          className="w-full border-b border-tp-gray-100 px-4 py-3 text-left hover:bg-tp-gray-100/35"
         >
           <span className="flex items-center gap-2.5"><Avatar name={nickname} size={40} /><span className="text-[15px] text-tp-gray-600">有什麼問題？</span></span>
         </button>
@@ -98,46 +103,77 @@ export function ForumFeed({
             {query ? "找不到符合的討論" : "目前沒有討論串"}
           </p>
         )}
-        {visible.map((question) => (
-          <button
-            type="button"
-            key={question.id}
-            onClick={() => onOpen(question.id)}
-            className="block w-full px-4 py-3 text-left transition-colors hover:bg-tp-gray-100/35 active:bg-tp-gray-100/55"
-          >
-            <span className="flex gap-2.5">
-              <span className="flex shrink-0 flex-col items-center gap-1">
-                <Avatar name={question.author.nickname} size={40} />
-                {question.author.role === "bot" && <span className="text-[11px] font-semibold text-tp-primary-500">機器人</span>}
-              </span>
-              <span className="min-w-0 flex flex-col">
-                <span className="block line-clamp-3 text-[15px] leading-relaxed whitespace-pre-wrap text-tp-gray-900">{question.body ?? "內容待確認"}</span>
-                <span className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-tp-gray-600">
-                  <span className="flex items-center gap-1" aria-label={`${question.answer_count} 則留言`}><MessageCircle className="size-4" />{question.answer_count}</span>
-                  {question.location_sharing !== "off" && <span aria-label="已開啟附近通知" title="已開啟附近通知"><MapPin className="size-4" /></span>}
-                  <time dateTime={question.created_at} className="whitespace-nowrap">{timeAgo(question.created_at, now)}</time>
-                  <span
-                    className={cn(
-                      "font-semibold",
-                      question.category === "uncategorized"
-                        ? "text-tp-secondary-800"
-                        : "text-tp-gray-800",
-                    )}
-                  >
-                    #{categoryLabel(question.category)}
-                  </span>
-                  {(question.tags ?? []).slice(0, 2).map((tag) => <span key={tag} className="font-semibold text-tp-primary-500">#{tag.replace(/^#/, "")}</span>)}
+        <div className="divide-y divide-tp-gray-100">
+          {visible.map((question) => (
+            <article
+              key={question.id}
+              className="relative w-full px-4 py-3 transition-colors hover:bg-tp-gray-100/35"
+            >
+              <button
+                type="button"
+                onClick={() => onOpen(question.id)}
+                aria-label={`開啟討論：${question.body ?? "內容待確認"}`}
+                className="absolute inset-0 size-full text-left focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-tp-primary-500 active:bg-tp-gray-100/55"
+              />
+              <div className="pointer-events-none relative flex gap-2.5">
+                <span className="flex shrink-0 flex-col items-center">
+                  <Avatar name={question.author.nickname} size={40} />
                 </span>
-              </span>
-            </span>
-          </button>
-        ))}
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="mb-1 flex max-w-full items-center gap-1.5 text-[13px] text-tp-gray-800">
+                    <span className="truncate">{question.author.nickname}</span>
+                    {question.author.role === "bot" && <span className="shrink-0 rounded-full bg-tp-primary-50 px-1.5 font-semibold text-tp-primary-500">機器人</span>}
+                  </span>
+                  {question.body !== null ? (
+                    <span className="block text-[15px] leading-relaxed whitespace-pre-wrap break-words text-tp-gray-900">{question.body}</span>
+                  ) : question.hidden_parts.some((part) => part.part === "body") ? (
+                    <span className="text-[15px] italic text-tp-gray-600">內容待確認個資，暫時隱藏</span>
+                  ) : question.media.length === 0 ? (
+                    <span className="text-[15px] text-tp-gray-600">內容待確認</span>
+                  ) : null}
+                  {question.media.length > 0 && (
+                    <div className="mt-2 flex min-w-0 flex-wrap gap-2">
+                      {question.media.map((media) => (
+                        <div key={media.id} className="pointer-events-auto max-w-full">
+                          {media.kind === "image" ? (
+                            <ImageBubble media={media} onOpen={setLightbox} />
+                          ) : media.kind === "video" ? (
+                            <VideoBubble media={media} />
+                          ) : (
+                            <AudioBubble media={media} self={false} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <span className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-tp-gray-600">
+                    <span className="flex items-center gap-1" aria-label={`${question.answer_count} 則留言`}><MessageCircle className="size-4" />{question.answer_count}</span>
+                    {question.location_sharing !== "off" && <span aria-label="已開啟附近通知" title="已開啟附近通知"><MapPin className="size-4" /></span>}
+                    <time dateTime={question.created_at} className="whitespace-nowrap">{timeAgo(question.created_at, now)}</time>
+                    <span
+                      className={cn(
+                        "font-semibold",
+                        question.category === "uncategorized"
+                          ? "text-tp-secondary-800"
+                          : "text-tp-gray-800",
+                      )}
+                    >
+                      #{categoryLabel(question.category)}
+                    </span>
+                    {(question.tags ?? []).slice(0, 2).map((tag) => <span key={tag} className="font-semibold text-tp-primary-500">#{tag.replace(/^#/, "")}</span>)}
+                  </span>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
         {hasMore && !loading && (
           <button type="button" onClick={onLoadMore} disabled={loadingMore} className="min-h-11 w-full text-[15px] font-medium text-tp-primary-500 disabled:opacity-50">
             {loadingMore ? "載入更多討論…" : "載入更多討論"}
           </button>
         )}
       </div>
+      {lightbox && <Lightbox url={lightbox} onClose={() => setLightbox(null)} />}
     </div>
   );
 }
