@@ -129,6 +129,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 | GET | `/questions` | 問題列表（論壇與任務板共用） | 是 |
 | POST | `/questions` | 發問 | 是 |
 | GET | `/questions/{question_id}` | 問題詳情 | 是 |
+| POST | `/questions/{question_id}/resolve` | 提問者直接標記問題已解決 | 是 |
 | DELETE | `/questions/{question_id}` | 撤回問題 | 是 |
 | GET | `/questions/{question_id}/answers` | 回答列表 | 是 |
 | POST | `/questions/{question_id}/answers` | 回答問題 | 是 |
@@ -364,6 +365,21 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 - `200`：OK；`data` 是 [QuestionDetail](#questiondetail)
 - 錯誤：`401`、`404`
 
+### POST /questions/{question_id}/resolve
+
+提問者直接將自己的問題標記為 `resolved`，不需採納特定回答，也可在尚無回答時使用。重複標記回傳 409。這是聊天室新流程所需的端點，後端尚待實作。
+
+**參數**
+
+| 名稱 | 位置 | 型別 | 必填 | 說明 |
+|---|---|---|---|---|
+| `question_id` | 路徑 | string | 是 |  |
+
+**回應**
+
+- `200`：OK；`data` 是 [QuestionDetail](#questiondetail)
+- 錯誤：`401`、`403`、`404`、`409`
+
 ### DELETE /questions/{question_id}
 
 撤回問題。
@@ -482,7 +498,7 @@ Android 前景服務連同一條 SSE。連線中斷時，用 `POST /me/heartbeat
 
 投正讚或倒讚。
 
-每人每則回答一票，重複呼叫會覆蓋原本的票。不能投自己的回答。讚會影響回答排序與回答者的可信度評分，不影響積分。倒讚數和可信度評分不會出現在任何 API 回應中。
+每人每則回答一票，重複呼叫會覆蓋原本的票。聊天室新流程允許對自己的回答投正讚；後端尚待支援。讚會影響回答排序與回答者的可信度評分，不影響積分。倒讚數和可信度評分不會出現在任何 API 回應中。
 
 **參數**
 

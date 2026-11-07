@@ -227,7 +227,6 @@ export function createMockApi(
     author: PublicUser,
     body: string,
     up = 0,
-    accepted = false,
   ) => {
     const a: Answer = {
       id: makeId("a"),
@@ -236,7 +235,7 @@ export function createMockApi(
       body,
       media: [],
       language: "zh-TW",
-      is_accepted: accepted,
+      is_accepted: false,
       votes: { upvotes: up, my_vote: null },
       hidden_parts: [],
       created_at: iso(now - ago),
@@ -244,7 +243,6 @@ export function createMockApi(
     answers.push(a);
     votes.set(a.id, { up, mine: null });
     q.answer_count++;
-    if (accepted) q.accepted_answer_id = a.id;
     return a;
   };
 
@@ -272,7 +270,6 @@ export function createMockApi(
     HELPERS.xiaozhi,
     "這是房屋稅的繳款通知，繳費期限是 11/30。可以拿到便利商店繳，或用台北通直接繳費。",
     5,
-    true,
   );
   addAnswer(q1, 3 * DAY - 55 * MIN, HELPERS.wang, "補充：信封裡應該還有一張繳款單，帶那張去超商就可以了", 2);
   addAnswer(q1, 3 * DAY - 70 * MIN, meUser(), "找到了！謝謝你們 🙏");
@@ -604,37 +601,25 @@ export function createMockApi(
       await wait();
       const a = findAnswer(answerId);
       if (a.author.id !== me.id) throw new ApiError(403, "FORBIDDEN", "只能刪除自己的回答");
-      if (a.is_accepted) throw new ApiError(409, "ANSWER_ACCEPTED", "已採納的回答不能刪除");
       answers.splice(answers.indexOf(a), 1);
       const q = questions.find((x) => x.id === a.question_id);
       if (q) q.answer_count--;
       emit({ type: "answers.changed", question_id: a.question_id });
     },
 
-    async acceptAnswer(answerId) {
+    async resolveQuestion(questionId) {
       await wait();
-      const a = findAnswer(answerId);
-      const q = findQuestion(a.question_id);
-      if (q.author.id !== me.id) throw new ApiError(403, "FORBIDDEN", "只有發問者可以採納");
-      if (a.author.id === me.id) {
-        throw new ApiError(403, "SELF_ACTION_NOT_ALLOWED", "不能採納自己的回答");
-      }
-      if (q.accepted_answer_id) throw new ApiError(409, "ALREADY_ACCEPTED", "已經採納過了");
-      a.is_accepted = true;
-      q.accepted_answer_id = a.id;
+      const q = findQuestion(questionId);
+      if (q.author.id !== me.id) throw new ApiError(403, "FORBIDDEN", "只有提問者可以標記為解決");
+      if (q.status === "resolved") throw new ApiError(409, "ALREADY_RESOLVED", "這個問題已經解決了");
       q.status = "resolved";
-      a.author = { ...a.author, points: a.author.points + META.points.answer_accepted };
       emit({ type: "question.changed", question_id: q.id });
-      emit({ type: "answers.changed", question_id: q.id });
-      return clone(withVotes(a));
+      return clone(q);
     },
 
     async vote(answerId, value) {
       await wait(150);
       const a = findAnswer(answerId);
-      if (a.author.id === me.id) {
-        throw new ApiError(403, "SELF_ACTION_NOT_ALLOWED", "不能投自己的回答");
-      }
       const v = votes.get(answerId) ?? { up: 0, mine: null };
       if (v.mine === 1) v.up--;
       v.mine = value;

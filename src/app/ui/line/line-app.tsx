@@ -83,12 +83,8 @@ function errorMessage(e: unknown) {
     switch (e.code) {
       case "NOT_FOUND":
         return "這個問題已經撤回或不存在";
-      case "ALREADY_ACCEPTED":
-        return "這個問題已經採納過回答了";
-      case "ANSWER_ACCEPTED":
-        return "已採納的回答不能刪除";
-      case "SELF_ACTION_NOT_ALLOWED":
-        return "不能對自己的回答這樣做";
+      case "ALREADY_RESOLVED":
+        return "這個問題已經解決了";
       case "RATE_LIMITED":
         return "傳得太快了，請稍等一下再試";
       default:
@@ -481,16 +477,25 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
     }
   }
 
-  async function accept(a: Answer) {
+  async function resolve(id: string) {
     try {
-      await api.acceptAnswer(a.id);
+      await api.resolveQuestion(id);
       await Promise.all([
-        loadQuestion(a.question_id),
-        loadAnswers(a.question_id),
+        loadQuestion(id),
         loadSummaries(),
         loadForumQuestions(),
       ]);
-      notify("太好了！問題已標示為解決");
+      notify("問題已標記為已解決");
+    } catch (e) {
+      notify(errorMessage(e), "error");
+    }
+  }
+
+  async function toggleLike(answer: Answer) {
+    try {
+      if (answer.votes.my_vote === 1) await api.unvote(answer.id);
+      else await api.vote(answer.id, 1);
+      await loadAnswers(answer.question_id);
     } catch (e) {
       notify(errorMessage(e), "error");
     }
@@ -627,7 +632,8 @@ function LineAppConnected({ api, note }: { api: AskerApi; note: string | null })
           onSend={send}
           locationSharing={active.locationSharing}
           onLocationSharingChange={(value) => setActive((current) => current ? { ...current, locationSharing: value } : current)}
-          onAccept={accept}
+          onResolve={() => active.id ? resolve(active.id) : Promise.resolve()}
+          onToggleLike={toggleLike}
           onDeleteAnswer={deleteAnswer}
           onWithdraw={() => (active.id ? withdraw(active.id) : Promise.resolve())}
           onToggleMute={() =>

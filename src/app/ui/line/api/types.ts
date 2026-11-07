@@ -162,7 +162,7 @@ export type AskerApi = {
   listAnswers(questionId: string): Promise<Answer[]>;
   createAnswer(questionId: string, req: CreateAnswerRequest): Promise<Answer>;
   deleteAnswer(answerId: string): Promise<void>;
-  acceptAnswer(answerId: string): Promise<Answer>;
+  resolveQuestion(questionId: string): Promise<QuestionDetail>;
   vote(answerId: string, value: 1 | -1): Promise<VoteSummary>;
   unvote(answerId: string): Promise<VoteSummary>;
   uploadMedia(

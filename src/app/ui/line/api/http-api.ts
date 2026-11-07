@@ -230,8 +230,19 @@ export function createHttpApi(
       await request("DELETE", `/answers/${encodeURIComponent(answerId)}`);
     },
 
-    acceptAnswer: (answerId) =>
-      data<Answer>("POST", `/answers/${encodeURIComponent(answerId)}/accept`),
+    async resolveQuestion(questionId) {
+      try {
+        return await data<QuestionDetail>(
+          "POST",
+          `/questions/${encodeURIComponent(questionId)}/resolve`,
+        );
+      } catch (error) {
+        if (error instanceof ApiError && [404, 405, 501].includes(error.status)) {
+          throw new ApiError(501, "RESOLVE_NOT_SUPPORTED", "後端尚未支援直接標記為已解決");
+        }
+        throw error;
+      }
+    },
 
     vote: (answerId, value) =>
       data<VoteSummary>("PUT", `/answers/${encodeURIComponent(answerId)}/vote`, { value }),

@@ -4,7 +4,6 @@ import {
   Bell,
   BellOff,
   Camera,
-  Check,
   ChevronDown,
   ChevronLeft,
   CircleCheckBig,
@@ -17,7 +16,7 @@ import {
   Pin,
   Plus,
   SendHorizontal,
-  ChevronRight,
+  ThumbsUp,
   Trash2,
   Video,
   X,
@@ -64,8 +63,8 @@ export type ChatRoomProps = {
   unreadMarkerKey: string | null;
   onBack: () => void;
   onSend: (out: Outgoing) => Promise<boolean>;
-  /** 「問題解決了」：採納幫到忙的那個回答 */
-  onAccept: (answer: Answer) => Promise<void>;
+  onResolve: () => Promise<void>;
+  onToggleLike: (answer: Answer) => Promise<void>;
   onDeleteAnswer: (answer: Answer) => void;
   onWithdraw: () => Promise<void>;
   onToggleMute: () => void;
@@ -93,9 +92,7 @@ type Item =
   | { type: "unread"; key: string }
   | { type: "post"; key: string; post: Post; first: boolean };
 
-type Confirm =
-  | { kind: "accept"; answer: Answer }
-  | { kind: "withdraw" };
+type Confirm = { kind: "withdraw" };
 
 export function ChatRoom(props: ChatRoomProps) {
   const { question, answers, meId, now, sending, notify } = props;
@@ -110,9 +107,8 @@ export function ChatRoom(props: ChatRoomProps) {
   const [recording, setRecording] = useState(false);
   const [menu, setMenu] = useState<{ post: Post; top: number } | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
-  /** 「是誰的回答幫到您？」：開啟時記下聊天畫面上看得到哪些回答 */
-  /** 選取模式：直接在聊天畫面上點「幫到我的那則回答」 */
-  const [selecting, setSelecting] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [likingIds, setLikingIds] = useState<Set<string>>(() => new Set());
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [showJump, setShowJump] = useState(false);
@@ -127,12 +123,7 @@ export function ChatRoom(props: ChatRoomProps) {
     [answers, meId],
   );
   const othersCount = othersAnswers.length;
-  const canResolve =
-    !!question &&
-    isAuthor &&
-    question.status !== "resolved" &&
-    !question.accepted_answer_id &&
-    othersCount > 0;
+  const canResolve = !!question && isAuthor && question.status !== "resolved";
   /** 像 LINE 群組人數：自己＋回答過的人 */
   const members = 1 + new Set(othersAnswers.map((a) => a.author.id)).size;
 
@@ -211,7 +202,6 @@ export function ChatRoom(props: ChatRoomProps) {
   // ---- 手機返回鍵：由上往下一層一層關 ----
   useBackLayer(true, props.onBack);
   useBackLayer(drawerOpen, () => setDrawerOpen(false));
-  useBackLayer(selecting, () => setSelecting(false));
   useBackLayer(recording, () => setRecording(false));
   useBackLayer(menu !== null, () => setMenu(null));
   useBackLayer(confirm !== null, () => setConfirm(null));
@@ -313,13 +303,24 @@ export function ChatRoom(props: ChatRoomProps) {
     props.onSend({ kind: "video", file });
   }
 
-  /**
-   * 長輩按「問題解決了」時，幫到他的回答通常就在畫面上，
-   * 所以不另外列清單，畫面停在原地，直接點那則回答（像 LINE 的選取訊息）。
-   */
-  function startSelecting() {
-    setMenu(null);
-    setSelecting(true);
+  async function resolve() {
+    if (!canResolve || resolving) return;
+    setResolving(true);
+    try { await props.onResolve(); }
+    finally { setResolving(false); }
+  }
+
+  async function toggleLike(answer: Answer) {
+    if (likingIds.has(answer.id)) return;
+    setLikingIds((previous) => new Set(previous).add(answer.id));
+    try { await props.onToggleLike(answer); }
+    finally {
+      setLikingIds((previous) => {
+        const next = new Set(previous);
+        next.delete(answer.id);
+        return next;
+      });
+    }
   }
 
   function openMenu(post: Post, el: HTMLElement) {
@@ -348,11 +349,7 @@ export function ChatRoom(props: ChatRoomProps) {
       ? { text: "這個問題已經解決了", className: "bg-claude-green/15 text-claude-green" }
       : !isAuthor
         ? { text: "加入討論，分享你的回答", className: "bg-claude-sand text-stone-600" }
-      : question.status === "in_progress"
-        ? { text: "有人正在協助您", className: "bg-claude-blue/15 text-claude-blue" }
-        : othersCount === 0
-          ? { text: "已送出，正在等待熱心的人回答", className: "bg-claude-sand text-stone-600" }
-          : { text: "收到回答了！問題解決了嗎？", className: "bg-claude/15 text-claude-dark" };
+        : null;
 
   const subtitle = !question
     ? "還沒送出"
@@ -373,17 +370,12 @@ export function ChatRoom(props: ChatRoomProps) {
       onTouchEnd={(event) => {
         const start = swipeStart.current;
         swipeStart.current = null;
-        if (!start || selecting || drawerOpen || recording || menu || confirm || lightbox) return;
+        if (!start || drawerOpen || recording || menu || confirm || lightbox) return;
         const dx = event.changedTouches[0].clientX - start.x;
         const dy = event.changedTouches[0].clientY - start.y;
         if (dx < -85 && Math.abs(dx) > Math.abs(dy) * 1.4) props.onBack();
       }}
     >
-      {selecting ? (
-        <header className="flex h-16 shrink-0 items-center justify-center bg-claude-ink px-4 text-white">
-          <p className="text-[17px] font-bold">請點一下幫到您的那則回答</p>
-        </header>
-      ) : (
         <header className="flex h-16 shrink-0 items-center gap-1 pr-1 pl-0.5">
           <button
             type="button"
@@ -416,7 +408,6 @@ export function ChatRoom(props: ChatRoomProps) {
             </IconButton>
           )}
         </header>
-      )}
 
       {!question && draftOptionsOpen && (
         <div className="mx-3 mb-2 rounded-2xl bg-white p-3 shadow-sm">
@@ -427,33 +418,13 @@ export function ChatRoom(props: ChatRoomProps) {
         </div>
       )}
 
-      {banner &&
-        !selecting &&
-        (canResolve ? (
-          // 像 LINE 群組的公告列：點一下就能說「問題解決了」
-          <button
-            type="button"
-            onClick={startSelecting}
-            className={cn(
-              "flex min-h-12 shrink-0 items-center justify-center gap-1 px-3 py-2 text-center text-[15px] font-medium",
-              banner.className,
-            )}
-          >
-            {banner.text}
-            <span className="font-bold underline underline-offset-2">點這裡</span>
-            <ChevronRight className="size-4" />
-          </button>
-        ) : (
-          <p
-            className={cn(
-              "flex shrink-0 items-center justify-center gap-1.5 px-3 py-2 text-center text-[15px] font-medium",
-              banner.className,
-            )}
-          >
-            {question?.status === "resolved" && <CircleCheckBig className="size-4" />}
-            {banner.text}
-          </p>
-        ))}
+      {banner && <p className={cn("flex shrink-0 items-center justify-center gap-1.5 px-3 py-2 text-center text-[15px] font-medium", banner.className)}>
+        {question?.status === "resolved" && <CircleCheckBig className="size-4" />}{banner.text}
+      </p>}
+      {canResolve && <button type="button" onClick={resolve} disabled={resolving} className="mx-3 mb-2 flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-claude/15 px-3 text-[15px] font-semibold text-claude-dark disabled:opacity-50">
+        {resolving ? <LoaderCircle className="size-5 animate-spin" /> : <CircleCheckBig className="size-5" />}
+        標記為已解決
+      </button>}
 
       <div
         ref={listRef}
@@ -466,7 +437,7 @@ export function ChatRoom(props: ChatRoomProps) {
             return (
               <div
                 key={item.key}
-                className={cn("my-3 flex justify-center", selecting && "opacity-35")}
+                className="my-3 flex justify-center"
               >
                 <span className="rounded-full bg-claude-sand px-3 py-0.5 text-[12px] text-stone-700">
                   {item.label}
@@ -478,7 +449,7 @@ export function ChatRoom(props: ChatRoomProps) {
             return (
               <div
                 key={item.key}
-                className={cn("my-3 flex justify-center px-4", selecting && "opacity-35")}
+                className="my-3 flex justify-center px-4"
               >
                 <span className="rounded-2xl bg-claude-sand px-4 py-2.5 text-center text-[15px] leading-relaxed whitespace-pre-wrap text-stone-700">
                   {item.text}
@@ -491,7 +462,7 @@ export function ChatRoom(props: ChatRoomProps) {
               <div
                 key={item.key}
                 data-unread-marker
-                className={cn("my-3 flex justify-center", selecting && "opacity-35")}
+                className="my-3 flex justify-center"
               >
                 <span className="rounded-full bg-claude/12 px-3 py-1 text-[12px] font-medium text-claude-dark">
                   以下為新回答
@@ -506,11 +477,8 @@ export function ChatRoom(props: ChatRoomProps) {
               first={item.first}
               onMenu={openMenu}
               onOpenImage={setLightbox}
-              selectMode={selecting}
-              selected={
-                confirm?.kind === "accept" && confirm.answer.id === item.key
-              }
-              onSelect={(a) => setConfirm({ kind: "accept", answer: a })}
+              onToggleLike={toggleLike}
+              likeBusy={item.post.answer ? likingIds.has(item.post.answer.id) : false}
             />
           );
         })}
@@ -537,17 +505,7 @@ export function ChatRoom(props: ChatRoomProps) {
         </button>
       )}
 
-      {selecting ? (
-        <div className="shrink-0 border-t border-claude-sand bg-claude-ivory px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <button
-            type="button"
-            onClick={() => setSelecting(false)}
-            className="w-full rounded-2xl bg-claude-sand py-3.5 text-[17px] font-medium text-stone-700 active:bg-stone-300"
-          >
-            取消
-          </button>
-        </div>
-      ) : recording ? (
+      {recording ? (
         <VoiceRecorder
           maxSeconds={META.limits.audio_max_seconds}
           onCancel={() => setRecording(false)}
@@ -648,12 +606,7 @@ export function ChatRoom(props: ChatRoomProps) {
           question={question}
           prefs={props.prefs}
           answerCount={othersCount}
-          canResolve={canResolve}
           isAuthor={isAuthor}
-          onResolve={() => {
-            setDrawerOpen(false);
-            startSelecting();
-          }}
           onClose={() => setDrawerOpen(false)}
           onToggleMute={props.onToggleMute}
           onTogglePin={props.onTogglePin}
@@ -661,26 +614,6 @@ export function ChatRoom(props: ChatRoomProps) {
         />
       )}
 
-      {confirm?.kind === "accept" && (
-        <ConfirmDialog
-          title={`是「${confirm.answer.author.nickname}」這則回答幫到您嗎？`}
-          quote={
-            confirm.answer.body ??
-            (confirm.answer.media.some((m) => m.kind === "audio")
-              ? "（語音訊息）"
-              : confirm.answer.media.some((m) => m.kind === "video") ? "（影片）" : "（照片）")
-          }
-          body="確定後，這個問題會標示為「已解決」，之後不能更改。"
-          confirmLabel="是，解決了"
-          // 按取消會留在選取模式，可以改點別則
-          onCancel={() => setConfirm(null)}
-          onConfirm={async () => {
-            setConfirm(null);
-            setSelecting(false);
-            await props.onAccept(confirm.answer);
-          }}
-        />
-      )}
       {confirm?.kind === "withdraw" && (
         <ConfirmDialog
           title="撤回這個問題？"
@@ -706,37 +639,29 @@ function PostRow({
   first,
   onMenu,
   onOpenImage,
-  selectMode,
-  selected,
-  onSelect,
+  onToggleLike,
+  likeBusy,
 }: {
   post: Post;
   first: boolean;
   onMenu: (post: Post, el: HTMLElement) => void;
   onOpenImage: (url: string) => void;
-  selectMode: boolean;
-  selected: boolean;
-  onSelect: (answer: Answer) => void;
+  onToggleLike: (answer: Answer) => void;
+  likeBusy: boolean;
 }) {
   const press = useLongPress((el) => onMenu(post, el));
-  const accepted = post.answer?.is_accepted === true;
   const answer = post.answer;
-  const selectable = selectMode && answer !== null && !post.self;
 
   const bubbles = (
     <div
-      {...(selectMode ? {} : press)}
+      {...press}
       className={cn(
         "flex min-w-0 flex-col gap-1 select-none [-webkit-touch-callout:none]",
         post.self ? "items-end" : "items-start",
       )}
     >
       {(post.body !== null || post.hiddenBody) && (
-        <TextBubble
-          self={post.self}
-          tail={first}
-          accepted={accepted}
-        >
+        <TextBubble self={post.self} tail={first}>
           {post.hiddenBody ? (
             <span className="text-stone-400 italic">內容待確認個資，暫時隱藏</span>
           ) : (
@@ -755,6 +680,22 @@ function PostRow({
       )}
     </div>
   );
+  const like = answer && (
+    <button
+      type="button"
+      aria-label={`${answer.votes.my_vote === 1 ? "取消讚" : "讚"}，目前 ${answer.votes.upvotes} 個讚`}
+      aria-pressed={answer.votes.my_vote === 1}
+      disabled={likeBusy}
+      onClick={() => onToggleLike(answer)}
+      className={cn(
+        "flex min-h-8 items-center gap-1.5 justify-self-start rounded-full px-2 text-[13px] transition-colors disabled:opacity-50",
+        answer.votes.my_vote === 1 ? "bg-claude/15 font-semibold text-claude-dark" : "text-stone-600 hover:bg-black/5",
+      )}
+    >
+      <ThumbsUp className="size-4" fill={answer.votes.my_vote === 1 ? "currentColor" : "none"} />
+      <span>{answer.votes.upvotes}</span>
+    </button>
+  );
   const time = (
     <span className="shrink-0 pb-0.5 text-[12px] leading-tight text-stone-500">
       {formatClock(post.at)}
@@ -765,15 +706,13 @@ function PostRow({
     return (
       <div
         data-key={post.key}
-        className={cn(
-          "flex items-end justify-end gap-1.5 pl-12 max-[300px]:flex-col-reverse max-[300px]:items-end max-[300px]:pl-4",
-          first ? "mt-3" : "mt-1",
-          // 選取模式時自己的訊息不能選，變淡
-          selectMode && "pointer-events-none opacity-35",
-        )}
+        className={cn("flex justify-end pl-12 max-[300px]:pl-1", first ? "mt-3" : "mt-1")}
       >
-        {time}
-        {bubbles}
+        <div className="grid w-fit max-w-full min-w-0 grid-cols-[auto_minmax(0,1fr)] items-end gap-x-1.5">
+          <span className="col-start-1 row-start-1">{time}</span>
+          <div className="col-start-2 row-start-1 min-w-0">{bubbles}</div>
+          {like && <span className="col-start-2 row-start-2 mt-1">{like}</span>}
+        </div>
       </div>
     );
   }
@@ -784,29 +723,8 @@ function PostRow({
       className={cn(
         "relative flex items-start gap-2 pr-8 max-[300px]:gap-1 max-[300px]:pr-2",
         first ? "mt-3" : "mt-1.5",
-        selectMode && !selectable && "pointer-events-none opacity-35",
       )}
     >
-      {selectable && (
-        <>
-          {/* 整列都能點，長輩不用瞄準泡泡 */}
-          <button
-            type="button"
-            onClick={() => onSelect(answer)}
-            aria-label={`選擇「${post.authorName}」的這則回答`}
-            className="absolute inset-0 z-10 rounded-2xl active:bg-black/5"
-          />
-          <span
-            aria-hidden
-            className={cn(
-              "flex size-7 shrink-0 items-center justify-center self-center rounded-full border-2",
-              selected ? "border-claude bg-claude text-white" : "border-stone-300 bg-white",
-            )}
-          >
-            {selected && <Check className="size-4" strokeWidth={3} />}
-          </span>
-        </>
-      )}
       <div className="w-9 shrink-0 max-[300px]:hidden">{first && <Avatar name={post.authorName} size={36} />}</div>
       <div className="flex min-w-0 flex-col items-start">
         {first && (
@@ -814,16 +732,11 @@ function PostRow({
             {post.authorName}
           </span>
         )}
-        <div className="flex max-w-full items-end gap-1.5 max-[300px]:flex-col max-[300px]:items-start">
-          {bubbles}
-          {time}
+        <div className="grid w-fit max-w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-x-1.5">
+          <div className="col-start-1 row-start-1 min-w-0">{bubbles}</div>
+          <span className="col-start-2 row-start-1">{time}</span>
+          {like && <span className="col-start-1 row-start-2 mt-1">{like}</span>}
         </div>
-        {accepted && (
-          <span className="mt-1 flex items-center gap-1 text-[13px] font-medium text-claude-green">
-            <CircleCheckBig className="size-4" />
-            解決了我的問題
-          </span>
-        )}
       </div>
     </div>
   );
@@ -832,12 +745,10 @@ function PostRow({
 function TextBubble({
   self,
   tail,
-  accepted,
   children,
 }: {
   self: boolean;
   tail: boolean;
-  accepted: boolean;
   children: ReactNode;
 }) {
   const color = self ? SELF_BUBBLE : "#ffffff";
@@ -847,7 +758,6 @@ function TextBubble({
         "relative rounded-[18px] px-3.5 py-2.5 text-[15px] leading-snug wrap-break-word whitespace-pre-wrap text-claude-ink",
         !self && "shadow-[0_1px_1px_rgb(20_20_19/0.06)]",
         tail && (self ? "rounded-tr-[4px]" : "rounded-tl-[4px]"),
-        accepted && "ring-2 ring-claude-green",
       )}
       style={{ background: color }}
     >
@@ -883,7 +793,7 @@ function PostMenu({
   const a = post.answer;
   const actions: { label: string; icon: LucideIcon; run: () => void }[] = [];
   if (post.body) actions.push({ label: "複製", icon: Copy, run: onCopy });
-  if (a && post.self && !a.is_accepted) {
+  if (a && post.self) {
     actions.push({ label: "刪除", icon: Trash2, run: onDelete });
   }
   if (actions.length === 0) return null;
@@ -925,9 +835,7 @@ function QuestionDrawer({
   question,
   prefs,
   answerCount,
-  canResolve,
   isAuthor,
-  onResolve,
   onClose,
   onToggleMute,
   onTogglePin,
@@ -936,9 +844,7 @@ function QuestionDrawer({
   question: QuestionDetail;
   prefs: QuestionPrefs | null;
   answerCount: number;
-  canResolve: boolean;
   isAuthor: boolean;
-  onResolve: () => void;
   onClose: () => void;
   onToggleMute: () => void;
   onTogglePin: () => void;
@@ -993,24 +899,6 @@ function QuestionDrawer({
             </button>
           ))}
         </div>
-        {isAuthor && question.status !== "resolved" && (
-          <div className="px-5 pt-4">
-            <button
-              type="button"
-              onClick={onResolve}
-              disabled={!canResolve}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-claude py-3.5 text-[17px] font-bold text-white disabled:bg-claude-sand disabled:text-stone-400"
-            >
-              <CircleCheckBig className="size-5" />
-              問題解決了
-            </button>
-            {!canResolve && (
-              <p className="mt-1.5 text-center text-[13px] text-stone-500">
-                還沒有人回答，有人回答後就可以按
-              </p>
-            )}
-          </div>
-        )}
         <dl className="flex-1 overflow-y-auto px-5 py-2">
           {rows.map(([k, v]) => (
             <div key={k} className="flex justify-between border-b border-claude-sand/60 py-3 text-[15px]">
@@ -1033,7 +921,6 @@ function QuestionDrawer({
 
 function ConfirmDialog({
   title,
-  quote,
   body,
   confirmLabel,
   danger,
@@ -1041,8 +928,6 @@ function ConfirmDialog({
   onConfirm,
 }: {
   title: string;
-  /** 引用的內容，例如被選中的那則回答 */
-  quote?: string;
   body: string;
   confirmLabel: string;
   danger?: boolean;
@@ -1057,11 +942,6 @@ function ConfirmDialog({
         className="w-full max-w-sm rounded-2xl bg-claude-ivory p-5 shadow-xl animate-in zoom-in-95"
       >
         <h2 className="text-center text-[17px] leading-snug font-bold">{title}</h2>
-        {quote && (
-          <p className="mt-3 line-clamp-4 rounded-xl bg-white px-3 py-2 text-[15px] text-claude-ink ring-1 ring-claude-sand">
-            {quote}
-          </p>
-        )}
         <p className="mt-2 text-center text-[15px] text-stone-700">{body}</p>
         <div className="mt-5 grid grid-cols-2 gap-2">
           <button
