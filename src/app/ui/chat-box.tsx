@@ -139,7 +139,7 @@ export default function ChatBox() {
               {m.self ? "我" : m.name} · {formatTime(m.at)}
             </span>
             <p
-              className={`whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${
+              className={`whitespace-pre-wrap wrap-break-word rounded-2xl px-3 py-2 text-sm ${
                 m.self
                   ? "bg-blue-600 text-white"
                   : "bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
