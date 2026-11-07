@@ -10,7 +10,9 @@ export type CategoryId =
   | "scam_check"
   | "app_usage"
   | "language"
-  | "other";
+  | "other"
+  /** 未分類：長輩發問的預設值，之後由志工分流 */
+  | "uncategorized";
 
 export type QuestionStatus = "open" | "in_progress" | "resolved";
 export type AssistanceMode = "online" | "onsite" | "either";

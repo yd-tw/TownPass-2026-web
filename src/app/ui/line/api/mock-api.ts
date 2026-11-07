@@ -32,6 +32,7 @@ export const META: Meta = {
     { id: "app_usage", label: "城市通操作" },
     { id: "language", label: "語言與文字" },
     { id: "other", label: "其他" },
+    { id: "uncategorized", label: "未分類" },
   ],
   languages: ["zh-TW", "en", "ja", "ko", "vi", "id", "th", "tl"],
   points: { answer_accepted: 10, assist_completed: 30 },

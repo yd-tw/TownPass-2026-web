@@ -890,7 +890,7 @@ BCP 47 語言標籤
 
 ### Category
 
-型別：`map_navigation` \| `admin_procedure` \| `document_contract` \| `scam_check` \| `app_usage` \| `language` \| `other`
+型別：`map_navigation` \| `admin_procedure` \| `document_contract` \| `scam_check` \| `app_usage` \| `language` \| `other` \| `uncategorized`
 
 ### AssistanceMode
 

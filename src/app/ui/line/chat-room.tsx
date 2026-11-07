@@ -176,7 +176,7 @@ export function ChatRoom(props: ChatRoomProps) {
           type: "note",
           key: "asked-note",
           text:
-            props.category === "other"
+            props.category === "uncategorized" || props.category === "other"
               ? "你開了一個新問題"
               : `你開了一個「${label}」的問題`,
         });

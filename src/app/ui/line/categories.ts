@@ -1,4 +1,5 @@
 import {
+  CircleDashed,
   CircleHelp,
   FileText,
   Landmark,
@@ -20,6 +21,7 @@ export const CATEGORY_STYLE: Record<CategoryId, { icon: LucideIcon; color: strin
   app_usage: { icon: Smartphone, color: "#d97757" },
   language: { icon: Languages, color: "#5f7149" },
   other: { icon: CircleHelp, color: "#8a8780" },
+  uncategorized: { icon: CircleDashed, color: "#8a8780" },
 };
 
 export function categoryLabel(id: CategoryId) {

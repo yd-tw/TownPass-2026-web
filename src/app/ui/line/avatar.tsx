@@ -53,7 +53,7 @@ export function Avatar({
   );
 }
 
-/** 問題（群組）的頭像：有選分類就用分類圖示，否則是依問題固定顏色的群組圖示 */
+/** 問題（群組）的頭像：有選分類就用分類圖示；未分類或「其他」用依問題固定顏色的群組圖示 */
 export function CategoryAvatar({
   category,
   seed,
@@ -64,7 +64,7 @@ export function CategoryAvatar({
   size?: number;
 }) {
   const style =
-    category === "other"
+    category === "uncategorized" || category === "other"
       ? { icon: Users, color: PALETTE[hash(seed) % PALETTE.length] }
       : CATEGORY_STYLE[category];
   const { icon: Icon, color } = style;

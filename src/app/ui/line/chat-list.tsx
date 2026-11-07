@@ -323,7 +323,7 @@ function RowActionSheet({
 }
 
 /**
- * 發問視窗：分類只是一個小小的下拉選單（預設「其他」，之後由志工分流），
+ * 發問視窗：分類只是一個小小的下拉選單（預設「未分類」，之後由志工分流），
  * 主角是大大的「發問」按鈕；按下後進入空的群組，用打字、拍照或錄音說明問題。
  */
 export function AskSheet({
@@ -333,7 +333,7 @@ export function AskSheet({
   onAsk: (category: CategoryId) => void;
   onClose: () => void;
 }) {
-  const [category, setCategory] = useState<CategoryId>("other");
+  const [category, setCategory] = useState<CategoryId>("uncategorized");
   return (
     <Sheet onClose={onClose}>
       <div className="px-5 pt-6 pb-4">
