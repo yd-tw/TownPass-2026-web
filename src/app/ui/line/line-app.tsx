@@ -369,7 +369,11 @@ function LineAppConnected({
   );
 
   // 分頁與聊天室名稱顯示在網頁標題
-  const pageTitle = isRoomPage ? "討論串" : active ? (active.id === null ? "新問題" : "討論串") : isForumPage ? "討論串" : "我的問題";
+  const pageTitle = isNewPage || active?.id === null
+    ? "我要發問"
+    : isRoomPage || active || isForumPage
+      ? "討論串"
+      : "我的問題";
   useEffect(() => {
     const previous = document.title;
     document.title = pageTitle;
