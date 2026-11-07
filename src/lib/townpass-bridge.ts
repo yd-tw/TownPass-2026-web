@@ -115,6 +115,13 @@ export type ReportDraft = {
   /** PNG data URL；使用者未附截圖時為 null */
   image: string | null;
   context: {
+    /**
+     * 截圖時所在畫面，例如 `/account`、`/#home`（首頁分頁）、`web:tp2026.ydtw.net/new?question=1`、
+     * 結尾 `+dialog` / `+sheet` 表示開著對話框或底部彈窗。舊版 App 沒有這個欄位。
+     */
+    screen?: string;
+    /** 截圖時標題列的文字（WebView 為網頁 <title>） */
+    screenTitle?: string | null;
     route: string;
     routeHistory: string[];
     webUrl: string | null;

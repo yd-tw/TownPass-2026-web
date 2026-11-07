@@ -100,7 +100,9 @@ export default function NewPostForm() {
             ? {
                 service_id: "townpass-app",
                 service_name: "Town Pass",
-                page_route: draft.context.route.split("?")[0],
+                // page_route 不可含 query；完整的 screen 仍會隨 extra 送出
+                page_route: (draft.context.screen ?? draft.context.route).replace(/\?[^+]*/, ""),
+                page_title: draft.context.screenTitle?.slice(0, 80) || undefined,
                 extra: { reportId: draft.id, ...draft.context },
               }
             : null,
